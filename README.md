@@ -4,7 +4,7 @@
 
 LlamaEngine provides a dynamic way to integrate LLMs into native applications, enabling efficient **LLM interaction, prompt engineering, and natural language processing (NLP)** through backend selection and fine-grained AI context control. It allows **C/C++ clients** to load LLM models, such as **GGUF files** from **Hugging Face**, query metadata, and run inferences on various hardware backends supported by **llama.cpp**.  
 
-This project is a [**spinoff from StarGit**](https://stargit.com), designed to enhance **local AI-driven development and automation pipelines**. It offers **source code analysis, security auditing, and development automation**—all without relying on cloud services, ensuring **security, transparency, and cost-effectiveness** for developers and enterprises.  
+This project is a module spin-off from [**StarGit**](https://stargit.com), now an open-source initiative aimed at enhancing local AI-driven development and automation pipelines — without relying on cloud services, ensuring **security, transparency, and cost-effectiveness** for developers and enterprises.  
 
 ## **Key Features**  
 
@@ -52,7 +52,7 @@ A **C++ client**, `LlamaClient`, is available for interfacing with applications.
 - **Managing AI context and fine-tuning responses**.  
 - **Interacting with different llama.cpp backends** seamlessly. 
 
-## Use Case in [**StarGit**](https://stargit.com)   
+## Use Case in StarGit   
 
 LlamaEngine is integrated into [**StarGit**](https://stargit.com) to enable **AI-driven Git workflows**, including:  
 

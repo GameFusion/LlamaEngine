@@ -1,5 +1,13 @@
-#ifndef LLAMA_CLIENT_H
-#define LLAMA_CLIENT_H
+/**
+ * @file LlamaClient.h
+ * @brief Defines the LlamaClient class for interacting with the Llama engine.
+ * @details Manages model loading, response generation, and GGUF metadata parsing.
+ * @author Andreas Carlen
+ * @date March 6, 2025
+ */
+
+#ifndef LlamaClient_h
+#define LlamaClient_h
 
 #include <iostream>
 #include <vector>
@@ -15,69 +23,117 @@
 #include "LlamaEngine.h"
 #include "GGUFMetadata.h"
 
-/*
-// Include the same structures from LlamaEngine
-struct GGUFMetadata {
-    std::string name;
-    std::vector<std::string> attributes;
-};
-
-struct Attachment {
-    std::string filename;
-    std::vector<char> data;
-};
-*/
-
-// LlamaClient Class
+/**
+ * @class LlamaClient
+ * @brief Provides an interface to load and interact with Llama models.
+ */
 class LlamaClient {
 public:
+    /**
+     * @brief Constructor for LlamaClient.
+     * @param backend The backend to use (e.g., "CUDA", "CPU").
+     * @param dllPath Path to the dynamic library.
+     */
 #ifdef _WIN32
     LlamaClient(const std::string &backend = "CUDA", const std::string& dllPath = "LlamaEngine.dll");
 #elif __APPLE__
     LlamaClient(const std::string &backend = "CPU", const std::string& dllPath = "LlamaEngine.dylib");
 #endif
+
+    /**
+     * @brief Destructor to clean up resources.
+     */
     ~LlamaClient();
 
+    /**
+     * @brief Retrieves the backend type in use.
+     * @return A string representing the backend (e.g., "CUDA").
+     */
     std::string backendType();
+
+    /**
+     * @brief Retrieves the library name.
+     * @return A string containing the dynamic library name.
+     */
     std::string libraryName();
 
+    /**
+     * @brief Creates a new instance of LlamaClient.
+     * @param backend The backend to use (default: "CUDA").
+     * @param dllPath Path to the dynamic library.
+     * @return A pointer to the created LlamaClient instance.
+     */
     static LlamaClient* Create(const std::string &backend /*= "CUDA"*/, const std::string& dllPath /*= "LlamaEngined.dll"*/);
+
+    /**
+     * @brief Retrieves any error that occurred during the creation of LlamaClient.
+     * @return A reference to the error string.
+     */
     static const std::string& GetCreateError();
 
+    /**
+     * @brief Loads an LLM model.
+     * @param modelName Name of the model.
+     * @param params Pointer to model parameters.
+     * @param paramCount Number of parameters.
+     * @param callback Optional callback function for status updates.
+     * @return True if the model loads successfully, false otherwise.
+     */
     bool loadModel(const std::string& modelName, struct ModelParameter* params, size_t paramCount, void (*callback)(const char*) = nullptr);
-    //std::string generateResponse(const std::string& prompt, void (*streamCallback)(const char*) = nullptr, void (*finishedCallback)(const char*) = nullptr);
+
+    /**
+     * @brief Generates a response based on a given prompt.
+     * @param prompt The input text to process.
+     * @param streamCallback Callback for streaming tokens.
+     * @param finishedCallback Callback for completion notification.
+     * @param userData User-defined data to pass to callbacks.
+     * @return True if successful, false otherwise.
+     */
     bool generateResponse(const std::string& prompt,
                           void (*streamCallback)(const char* msg, void* user_data),
                           void (*finishedCallback)(const char* msg, void* user_data), void *userData);
 
+    /**
+     * @brief Parses GGUF metadata from a file.
+     * @param filepath Path to the GGUF file.
+     * @param callback Callback function for processing metadata.
+     * @return Parsed GGUFMetadata object.
+     */
     GGUFMetadata parseGGUF(const std::string& filepath, void (*callback)(const char* message));
 
 private:
 #ifdef _WIN32
-    HMODULE hDll;
-    typedef bool (*LoadModelFunc)(const char*, struct ModelParameter* params, size_t paramCount, void (*)(const char*));
-    typedef bool (*GenerateResponseFunc)(const char*, void (*)(const char* token, void* user_data), void (*)(const char* completeResponse, void* user_data), void *userData);
-    typedef const char* (*ParseGGUFFunc)(const char*, void (*)(const char* key, GGUFType type, void* data, void *userData), void (*callback)(const char* message), void *userData);
-
+    HMODULE hDll; ///< Handle to the loaded DLL
 #elif __APPLE__
-    void* hDll;
-    typedef bool (*LoadModelFunc)(const char*, struct ModelParameter* params, size_t paramCount, void (*)(const char*));
-    typedef bool (*GenerateResponseFunc)(const char*, void (*)(const char* token, void* user_data), void (*)(const char* completeResponse, void* user_data), void *userData);
-    typedef const char* (*ParseGGUFFunc)(const char*, void (*)(const char* key, GGUFType type, void* data, void *userData), void (*callback)(const char* message), void *userData);
-
+    void* hDll; ///< Handle to the loaded shared library
 #endif
 
-    LoadModelFunc loadModelFunc;
-    GenerateResponseFunc generateResponseFunc;
-    ParseGGUFFunc parseGGUFFunc;
+    /** Function pointers for dynamic linking **/
+    typedef bool (*LoadModelFunc)(const char*, struct ModelParameter* params, size_t paramCount, void (*)(const char*));
+    typedef bool (*GenerateResponseFunc)(const char*, void (*)(const char* token, void* user_data), void (*)(const char* completeResponse, void* user_data), void *userData);
+    typedef const char* (*ParseGGUFFunc)(const char*, void (*)(const char* key, GGUFType type, void* data, void *userData), void (*callback)(const char* message), void *userData);
 
+
+    LoadModelFunc loadModelFunc; ///< Function pointer for loading models
+    GenerateResponseFunc generateResponseFunc; ///< Function pointer for generating responses
+    ParseGGUFFunc parseGGUFFunc; ///< Function pointer for parsing GGUF metadata
+
+    /**
+     * @brief Handles streaming response tokens.
+     * @param response The response token received.
+     */
     void responseCallback(const std::string& response);
+
+    /**
+     * @brief Handles the completion of a response.
+     * @param message The final response message.
+     */
     void finishedCallback(const std::string& message);
 
-    static std::string createError; // set from static create method
+    static std::string createError; ///< Stores the last creation error message
 
-    std::string backend;   // Store the backend (CPU, CUDA, Vulkan)
-    std::string library;
+    std::string backend; ///< Backend type (CPU, CUDA, Vulkan)
+    std::string library; ///< Path to the dynamic library
 };
 
-#endif // LLAMA_CLIENT_H
+#endif // LlamaClient_h

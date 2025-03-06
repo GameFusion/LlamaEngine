@@ -9,8 +9,15 @@
 #include <dlfcn.h>
 #endif
 
+// Static member variable for storing creation error messages
 std::string LlamaClient::createError;
 
+/**
+ * @brief Constructor for LlamaClient.
+ * @param backendType The type of backend used.
+ * @param dllPath The path to the dynamic library (DLL/shared object).
+ * @throws std::runtime_error if the library fails to load or required functions are not found.
+ */
 LlamaClient::LlamaClient(const std::string &backendType, const std::string& dllPath) {
     backend = backendType;
     library = dllPath;
@@ -34,6 +41,7 @@ LlamaClient::LlamaClient(const std::string &backendType, const std::string& dllP
         throw std::runtime_error(oss.str());
     }
 
+    // Load function pointers
     loadModelFunc = (LoadModelFunc)GetProcAddress(hDll, "loadModel");
     generateResponseFunc = (GenerateResponseFunc)GetProcAddress(hDll, "generateResponse");
     parseGGUFFunc = (ParseGGUFFunc)GetProcAddress(hDll, "parseGGUF");
@@ -66,7 +74,9 @@ LlamaClient::LlamaClient(const std::string &backendType, const std::string& dllP
 #endif
 }
 
-// Destructor: Unloads the DLL
+/**
+ * @brief Destructor for LlamaClient. Unloads the DLL.
+ */
 LlamaClient::~LlamaClient() {
 #ifdef _WIN32
     if (hDll) {
@@ -79,7 +89,12 @@ LlamaClient::~LlamaClient() {
 #endif
 }
 
-
+/**
+ * @brief Factory method to create a LlamaClient instance.
+ * @param backendType The backend type to use.
+ * @param dllPath The path to the dynamic library.
+ * @return A pointer to LlamaClient or nullptr on failure.
+ */
 LlamaClient* LlamaClient::Create(const std::string &backendType, const std::string& dllPath) {
     createError.clear();
     try {
@@ -90,52 +105,51 @@ LlamaClient* LlamaClient::Create(const std::string &backendType, const std::stri
     }
 }
 
+/**
+ * @brief Retrieves the last creation error message.
+ * @return A reference to the error message string.
+ */
 const std::string& LlamaClient::GetCreateError() {
     return createError;
 }
 
-// Load model
+/**
+ * @brief Loads the model.
+ * @param backendType The type of backend used.
+ * @param params Model parameters.
+ * @param paramCount Number of parameters.
+ * @param callback Callback function.
+ * @return True if successful, false otherwise.
+ */
 bool LlamaClient::loadModel(const std::string& backendType, struct ModelParameter* params, size_t paramCount, void (*callback)(const char*)) {
     return loadModelFunc(backendType.c_str(), params, paramCount, callback);
 }
 
-// Generate response with callback
-
-
-//std::string LlamaClient::generateResponse(const std::string& prompt, void (*streamCallback)(const char*), void (*finishedCallback)(const char*)) {
+/**
+ * @brief Generates a response from the model.
+ * @param prompt The input prompt.
+ * @param streamCallback Streaming callback.
+ * @param finishedCallback Finished response callback.
+ * @param userData User data pointer.
+ * @return True if the response was generated successfully, false otherwise.
+ */
 bool LlamaClient::generateResponse(const std::string& prompt,
                                    void (*streamCallback)(const char* msg, void* user_data),
                                    void (*finishedCallback)(const char* msg, void* user_data),
                                    void *userData)
 {
-
-    // Wrapper function to call the std::function stored in user_data
-    auto callbackWrapper = [](const char* msg, void* user_data) {
-        auto* func = static_cast<std::function<void(const char*)>*>(user_data);
-        if (func) {
-            (*func)(msg);  // Invoke the callback
-        }
-    };
-
-    // Passer un pointeur au lieu de caster directement
-    //void* userData = static_cast<void*>(&callbackWrapper);
-
-    bool resultStatus = generateResponseFunc(prompt.c_str(), streamCallback, finishedCallback, userData);
-
-    //if(finishedCallback)
-    //    finishedCallback(result);
-
-    //return std::string(result);
-    return resultStatus;
+    return generateResponseFunc(prompt.c_str(), streamCallback, finishedCallback, userData);
 }
 
-// Parse GGUF file
+/**
+ * @brief Parses a GGUF file and extracts metadata.
+ * @param filepath Path to the GGUF file.
+ * @param callback Callback function.
+ * @return A GGUFMetadata object containing extracted metadata.
+ */
 GGUFMetadata LlamaClient::parseGGUF(const std::string& filepath, void (*callback)(const char*message)) {
 
     GGUFMetadata metadata;
-
-    //(*GGUFAttributeCallback)(const char* key, GGUFType type, void* value)
-    // Call to parseGGUF with a lambda callback to populate metadata
 
     // User data structure to hold metadata and callback function
     struct UserData {
@@ -143,7 +157,7 @@ GGUFMetadata LlamaClient::parseGGUF(const std::string& filepath, void (*callback
         void (*callback)(const char* message);
     };
 
-    // Create the user data structure
+    // Create the userData structure to pass data to lambda
     UserData userData = { &metadata, callback };
 
     // Call to parseGGUF with a lambda callback to populate metadata
@@ -185,11 +199,19 @@ GGUFMetadata LlamaClient::parseGGUF(const std::string& filepath, void (*callback
     return metadata;
 }
 
+/**
+ * @brief Gets the backend type used by the client.
+ * @return The backend type as a string.
+ */
 std::string LlamaClient::backendType()
 {
     return backend;
 }
 
+/**
+ * @brief Gets the library name used by the client.
+ * @return The library name as a string.
+ */
 std::string LlamaClient::libraryName()
 {
     return library;

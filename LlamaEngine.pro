@@ -3,7 +3,7 @@ CONFIG += dll
 
 # Backend Selection (CPU, CUDA, Vulkan, etc.)
 isEmpty(BACKEND){
-    BACKEND = Vulkan # Change this to CUDA or Vulkan when needed
+    BACKEND = CUDA # Change this to CUDA or Vulkan when needed
     mac {
     BACKEND = Metal # Change this to CUDA or Vulkan when needed
     }

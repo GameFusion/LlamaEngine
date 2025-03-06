@@ -1,7 +1,9 @@
 #include "LlamaRuntime.h"
 
+// Constructor initializes pointers to null
 LlamaRuntime::LlamaRuntime() : model(nullptr), smpl(nullptr), ctx(nullptr) {}
 
+// Destructor ensures proper resource cleanup
 LlamaRuntime::~LlamaRuntime() {
     if (smpl) {
         llama_sampler_free(smpl);
@@ -24,16 +26,19 @@ LlamaRuntime::~LlamaRuntime() {
     }
 }
 
+// Public method to load the model with default parameters
 bool LlamaRuntime::loadModel() {
     return loadModelInternal(modelPath, 99, context_size);
 }
 
+// Internal method to load the model with custom parameters
 bool LlamaRuntime::loadModelInternal(const std::string &modelPath, int ngl, int n_ctx) {
     context_size = n_ctx;
     error_.clear();
 
     logMessage("Loading Model context(" + std::to_string(n_ctx) + "): " + modelPath);
 
+    // Set up logging callback
     llama_log_set([](enum ggml_log_level level, const char *text, void *thisContext) {
 
         ((LlamaRuntime*)thisContext)->logMessage(text);
@@ -58,7 +63,7 @@ bool LlamaRuntime::loadModelInternal(const std::string &modelPath, int ngl, int 
         return false;
     }
 
-    // Get the vocabulary
+    // Get the model vocabulary
     vocab = llama_model_get_vocab(model);
 
     // Initialize the context parameters
@@ -77,44 +82,54 @@ bool LlamaRuntime::loadModelInternal(const std::string &modelPath, int ngl, int 
     // Access the maximum context size
     logMessage("Maximum context size: " + std::to_string(llama_n_ctx(ctx)));
 
+    // Initialize the sampling chain with various parameters
     smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
     llama_sampler_chain_add(smpl, llama_sampler_init_min_p(0.05f, 1));
     llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
     llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
+    // Resize formatted buffer for context size
     formatted.resize(n_ctx);
 
     return true;
 }
 
+// Setter for model path
 void LlamaRuntime::setModelPath(const std::string &path) {
     modelPath = path;
 }
 
+// Setter for context size
 void LlamaRuntime::setContextSize(int size) {
     context_size = size;
 }
 
+// Setter for temperature parameter
 void LlamaRuntime::setTemperature(float temp) {
     temperature = temp;
 }
 
+// Setter for top-K sampling
 void LlamaRuntime::setTopK(float k) {
     topK = k;
 }
 
+// Setter for top-P sampling
 void LlamaRuntime::setTopP(float p) {
     topP = p;
 }
 
+// Setter for repetition penalty
 void LlamaRuntime::setRepetitionPenalty(float penalty) {
     repetitionPenalty = penalty;
 }
 
+// Setter for log callback function
 void LlamaRuntime::setLogCallback(LogCallback callback) {
     logCallback = callback;
 }
 
+// General logging function
 void LlamaRuntime::logMessage(const std::string& message) {
     if (logCallback) {
         logCallback(message); // Send log to the callback
@@ -123,18 +138,22 @@ void LlamaRuntime::logMessage(const std::string& message) {
     }
 }
 
+// Log information messages
 void LlamaRuntime::logInfo(const std::string& message) {
     logMessage("[INFO] " + message);
 }
 
+// Log warning messages
 void LlamaRuntime::logWarning(const std::string& message) {
     logMessage("[WARNING] " + message);
 }
 
+// Log error messages
 void LlamaRuntime::logError(const std::string& message) {
     logMessage("[ERROR] " + message);
 }
 
+// Generates a response based on user input
 bool LlamaRuntime::generateResponse(const std::string &input_prompt, void (*callback)(const char*, void *userData), void *userData) {
     if (!ctx || !model || !vocab) {
         error_ = "Error: Model not loaded.";
@@ -142,9 +161,8 @@ bool LlamaRuntime::generateResponse(const std::string &input_prompt, void (*call
         return false;
     }
 
-    const std::string user_input = input_prompt;
     // add the user input to the message list and format it
-    messages.push_back({"user", strdup(user_input.c_str())});
+    messages.push_back({"user", strdup(input_prompt.c_str())});
 
     int new_len = llama_chat_apply_template(llama_model_chat_template(model, nullptr), messages.data(), messages.size(), true, formatted.data(), formatted.size());
     if (new_len > formatted.size()) {
@@ -166,8 +184,8 @@ bool LlamaRuntime::generateResponse(const std::string &input_prompt, void (*call
         return false;
     }
 
-    // add the response to the messages
-    messages.push_back({"assistant", strdup(response.c_str())});
+    // add the response to the messages, this is the history context used to provide llm with context in future prompts
+    messages.push_back({"assistant", _strdup(response.c_str())});
     int prev_len = llama_chat_apply_template(llama_model_chat_template(model, nullptr), messages.data(), messages.size(), false, nullptr, 0);
     if (prev_len < 0) {
         error_ = "Error: failed to apply the chat template";
@@ -175,13 +193,11 @@ bool LlamaRuntime::generateResponse(const std::string &input_prompt, void (*call
         return false;
     }
 
-    //return response;
     return false;
 }
 
+// Generates a response token by token
 bool LlamaRuntime::generate(const std::string &prompt, void (*callback)(const char*, void *), void *userData) {
-    //std::string response;
-
     response.clear();
 
     const bool is_first = llama_get_kv_cache_used_cells(ctx) == 0;
@@ -236,19 +252,24 @@ bool LlamaRuntime::generate(const std::string &prompt, void (*callback)(const ch
         batch = llama_batch_get_one(&new_token_id, 1);
     }
 
-    // return response;
     return true;
 }
 
 std::vector<llama_token> LlamaRuntime::tokenizePrompt(const std::string &prompt, bool is_first) {
+    // Determine the number of tokens required for the given prompt
     const int n_prompt_tokens = -llama_tokenize(vocab, prompt.c_str(), prompt.size(), nullptr, 0, is_first, true);
+
+    // If tokenization fails, return an empty vector
     if (n_prompt_tokens < 0) {
         return {};
     }
 
+    // Allocate a vector to store the tokens
     std::vector<llama_token> prompt_tokens(n_prompt_tokens);
+
+    // Perform actual tokenization and store the result in the vector
     if (llama_tokenize(vocab, prompt.c_str(), prompt.size(), prompt_tokens.data(), prompt_tokens.size(), is_first, true) < 0) {
-        return {};
+        return {}; // Return an empty vector on failure
     }
 
     return prompt_tokens;
@@ -258,25 +279,29 @@ GGUFMetadata LlamaRuntime::parseGGUF(const std::string& filepath, void (*message
     GGUFMetadata metadata;
     struct gguf_init_params params = { true };
 
+    // Initialize GGUF context from file
     struct gguf_context *ctx = gguf_init_from_file(filepath.c_str(), params);
     if (!ctx) {
 
         std::string error = "[ERROR]: Failed to load GGUF file: " + filepath+"\n";
         if (messageCallback)
             messageCallback(error.c_str());
-        return metadata;
+        return metadata; // Return empty metadata on failure
     }
 
+    // Retrieve the number of metadata keys
     uint32_t key_count = gguf_get_n_kv(ctx);
     //logMessage("GGUF Metadata Keys: "+std::to_string(key_count)+"\n");
     std::string message = "GGUF Metadata Keys: " + std::to_string(key_count) + "\n";
     if (messageCallback)
         messageCallback(message.c_str());
 
+    // Iterate through each metadata key and store relevant values
     for (uint32_t i = 0; i < key_count; ++i) {
         const char *key = gguf_get_key(ctx, i);
         int64_t key_id = gguf_find_key(ctx, key);
 
+        // Ensure the key exists
         if (key_id < 0) {
             std::string error = "[ERROR]: Failed to find key: "+std::to_string(key_id)+"\n";
             if (messageCallback)
@@ -284,20 +309,24 @@ GGUFMetadata LlamaRuntime::parseGGUF(const std::string& filepath, void (*message
             continue;
         }
 
+        // Determine the value type for the key
         enum gguf_type type = gguf_get_kv_type(ctx, key_id);
         GGUFMetadataEntry entry;
 
         if (type == GGUF_TYPE_UINT32) {
+            // Handle UINT32 type values
             uint32_t value = gguf_get_val_u32(ctx, key_id);
             entry.type = GGUFType::TYPE_UINT32;
             entry.ivalue = value;
         }
         else if (type == GGUF_TYPE_STRING) {
+            // Handle STRING type values
             const char *value = gguf_get_val_str(ctx, key_id);
             entry.type = GGUFType::TYPE_STRING;
             entry.svalue = value;
         }
         else {
+            // Handle unknown types gracefully
             std::string message = "Unknown type for key: " + std::to_string(key_id) + "\n";
             if (messageCallback)
                 messageCallback(message.c_str());
@@ -305,9 +334,11 @@ GGUFMetadata LlamaRuntime::parseGGUF(const std::string& filepath, void (*message
             entry.type = GGUFType::TYPE_UNKNOWN;
         }
 
+        // Store the metadata entry
         metadata.entries[key] = entry;
     }
 
+    // Clean up GGUF context
     gguf_free(ctx);
 
     return metadata;

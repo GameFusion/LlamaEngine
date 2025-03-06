@@ -56,14 +56,14 @@ private:
 #ifdef _WIN32
     HMODULE hDll;
     typedef bool (*LoadModelFunc)(const char*, struct ModelParameter* params, size_t paramCount, void (*)(const char*));
-    typedef bool (*GenerateResponseFunc)(const char*, void (*)(const char* msg, void* user_data), void (*)(const char* completeResponse, void* user_data), void *userData);
+    typedef bool (*GenerateResponseFunc)(const char*, void (*)(const char* token, void* user_data), void (*)(const char* completeResponse, void* user_data), void *userData);
     typedef const char* (*ParseGGUFFunc)(const char*, void (*)(const char* key, GGUFType type, void* data, void *userData), void (*callback)(const char* message), void *userData);
 
 #elif __APPLE__
     void* hDll;
     typedef bool (*LoadModelFunc)(const char*, struct ModelParameter* params, size_t paramCount, void (*)(const char*));
-    typedef bool (*GenerateResponseFunc)(const char*, void (*)(const char* msg, void* user_data), void *userData);
-    typedef GGUFMetadata (*ParseGGUFFunc)(const char*, void (*)(const char* key, GGUFType type, void* data, void *userData), void (*callback)(const char* message), void *userData);
+    typedef bool (*GenerateResponseFunc)(const char*, void (*)(const char* token, void* user_data), void (*)(const char* completeResponse, void* user_data), void *userData);
+    typedef const char* (*ParseGGUFFunc)(const char*, void (*)(const char* key, GGUFType type, void* data, void *userData), void (*callback)(const char* message), void *userData);
 
 #endif
 

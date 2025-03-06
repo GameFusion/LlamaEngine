@@ -46,10 +46,9 @@ public:
 
     bool loadModel(const std::string& modelName, struct ModelParameter* params, size_t paramCount, void (*callback)(const char*) = nullptr);
     //std::string generateResponse(const std::string& prompt, void (*streamCallback)(const char*) = nullptr, void (*finishedCallback)(const char*) = nullptr);
-    std::string generateResponse(const std::string& prompt,
-                                              std::function<void(const char*)> streamCallback,
-                                              std::function<void(const char*)> finishedCallback);
-
+    bool generateResponse(const std::string& prompt,
+                          void (*streamCallback)(const char* msg, void* user_data),
+                          void (*finishedCallback)(const char* msg, void* user_data), void *userData);
 
     GGUFMetadata parseGGUF(const std::string& filepath, void (*callback)(const char* message));
 
@@ -57,13 +56,13 @@ private:
 #ifdef _WIN32
     HMODULE hDll;
     typedef bool (*LoadModelFunc)(const char*, struct ModelParameter* params, size_t paramCount, void (*)(const char*));
-    typedef const char* (*GenerateResponseFunc)(const char*, void (*)(const char* msg, void* user_data), void *userData);
+    typedef bool (*GenerateResponseFunc)(const char*, void (*)(const char* msg, void* user_data), void *userData);
     typedef const char* (*ParseGGUFFunc)(const char*, void (*)(const char* key, GGUFType type, void* data, void *userData), void (*callback)(const char* message), void *userData);
 
 #elif __APPLE__
     void* hDll;
     typedef bool (*LoadModelFunc)(const char*, struct ModelParameter* params, size_t paramCount, void (*)(const char*));
-    typedef const char* (*GenerateResponseFunc)(const char*, void (*)(const char* msg, void* user_data), void *userData);
+    typedef bool (*GenerateResponseFunc)(const char*, void (*)(const char* msg, void* user_data), void *userData);
     typedef GGUFMetadata (*ParseGGUFFunc)(const char*, void (*)(const char* key, GGUFType type, void* data, void *userData), void (*callback)(const char* message), void *userData);
 
 #endif

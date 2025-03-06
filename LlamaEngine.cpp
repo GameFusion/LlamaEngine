@@ -133,5 +133,3 @@ LlamaEngine_API char* parseGGUF(const char* filepath, GGUFAttributeCallback call
     // Return the model name as a char* (ensure it's a valid pointer)
     return const_cast<char*>(metadata.name);
 }
-
-

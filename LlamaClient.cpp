@@ -101,10 +101,13 @@ bool LlamaClient::loadModel(const std::string& backendType, struct ModelParamete
 
 // Generate response with callback
 
+
 //std::string LlamaClient::generateResponse(const std::string& prompt, void (*streamCallback)(const char*), void (*finishedCallback)(const char*)) {
-std::string LlamaClient::generateResponse(const std::string& prompt,
-                                          std::function<void(const char*)> streamCallback,
-                                          std::function<void(const char*)> finishedCallback) {
+bool LlamaClient::generateResponse(const std::string& prompt,
+                                   void (*streamCallback)(const char* msg, void* user_data),
+                                   void (*finishedCallback)(const char* msg, void* user_data),
+                                   void *userData)
+{
 
     // Wrapper function to call the std::function stored in user_data
     auto callbackWrapper = [](const char* msg, void* user_data) {
@@ -114,13 +117,18 @@ std::string LlamaClient::generateResponse(const std::string& prompt,
         }
     };
 
-    const char* result = generateResponseFunc(prompt.c_str(), callbackWrapper, this);
+    // Passer un pointeur au lieu de caster directement
+    //void* userData = static_cast<void*>(&callbackWrapper);
 
-    if(finishedCallback)
-        finishedCallback(result);
+    bool resultStatus = generateResponseFunc(prompt.c_str(), streamCallback, userData);
 
-    return std::string(result);
+    //if(finishedCallback)
+    //    finishedCallback(result);
+
+    //return std::string(result);
+    return resultStatus;
 }
+
 // Parse GGUF file
 GGUFMetadata LlamaClient::parseGGUF(const std::string& filepath, void (*callback)(const char*message)) {
 
@@ -172,7 +180,6 @@ GGUFMetadata LlamaClient::parseGGUF(const std::string& filepath, void (*callback
     if (!metadata.entries["model_name"].svalue.empty()) {
         // Assuming metadata has model_name entry processed by the callback
         metadata.entries["model_name"] = GGUFMetadataEntry(metadata.entries["model_name"].svalue);
-
     }
 
     return metadata;

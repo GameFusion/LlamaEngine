@@ -96,6 +96,11 @@ public:
     bool generateResponse(const std::string &input_prompt, void (*callback)(const char*, void *userData), void *userData);
 
     /**
+     * @brief Get the full response.
+     */
+    const std::string getResponse();
+
+    /**
      * @brief Parses a GGUF file and extracts metadata.
      * @param filepath Path to the GGUF file.
      * @param callback Callback function for logging or processing messages.

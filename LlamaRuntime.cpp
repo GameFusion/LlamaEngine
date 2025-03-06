@@ -193,7 +193,7 @@ bool LlamaRuntime::generateResponse(const std::string &input_prompt, void (*call
         return false;
     }
 
-    return false;
+    return true;
 }
 
 // Generates a response token by token
@@ -253,6 +253,10 @@ bool LlamaRuntime::generate(const std::string &prompt, void (*callback)(const ch
     }
 
     return true;
+}
+
+const std::string LlamaRuntime::getResponse() {
+    return response;
 }
 
 std::vector<llama_token> LlamaRuntime::tokenizePrompt(const std::string &prompt, bool is_first) {

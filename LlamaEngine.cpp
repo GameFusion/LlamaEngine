@@ -99,13 +99,29 @@ LlamaEngine_API bool loadModel(const char* modelPath,
  * Generates a response based on the given prompt.
  *
  * @param prompt Input prompt string.
- * @param callback Function pointer to receive the response in chunks.
+ * @param streamCallback Function pointer to receive the response in token chunks.
+ * @param finalCallback Function pointer to receive the full final response.
  * @param userData Custom user data passed to the callback.
  * @return True if the response is generated successfully, false otherwise.
  */
-LlamaEngine_API bool generateResponse(const char* prompt, void (*callback)(const char*, void *userData), void *userData) {
+LlamaEngine_API bool generateResponse(const char* prompt,
+                                      void (*streamCallback)(const char*, void* userData),
+                                      void (*finalCallback)(const char*, void* userData),
+                                      void* userData) {
     
-    return runtimeContext->generateResponse(prompt, callback, userData);
+    bool ret = runtimeContext->generateResponse(prompt, streamCallback, userData);
+    if(ret && finalCallback)
+        finalCallback(runtimeContext->getResponse().c_str(), userData);
+
+    return ret;
+}
+
+/**
+ * Get the latest complete response.
+ * @return Returns the complete latest generated response.
+ */
+const char* getLastResponse() {
+    return runtimeContext->getResponse().c_str();
 }
 
 /**

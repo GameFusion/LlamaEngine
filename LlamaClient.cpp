@@ -120,7 +120,7 @@ bool LlamaClient::generateResponse(const std::string& prompt,
     // Passer un pointeur au lieu de caster directement
     //void* userData = static_cast<void*>(&callbackWrapper);
 
-    bool resultStatus = generateResponseFunc(prompt.c_str(), streamCallback, userData);
+    bool resultStatus = generateResponseFunc(prompt.c_str(), streamCallback, finishedCallback, userData);
 
     //if(finishedCallback)
     //    finishedCallback(result);

@@ -83,8 +83,11 @@ LlamaEngine_API bool loadModel(const char* backendType,
  * @return True if the response was successfully generated, false otherwise.
  */
 LlamaEngine_API bool generateResponse(const char* prompt,
-                                      void (*callback)(const char*, void* userData),
+                                      void (*streamCallback)(const char*, void* userData),
+                                      void (*finalCallback)(const char*, void* userData),
                                       void* userData);
+
+LlamaEngine_API const char* getLastResponse(); // Retrieve the latest full response
 
 /**
  * @brief Parses a GGUF file and retrieves metadata attributes via a callback.

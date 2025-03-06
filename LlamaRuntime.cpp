@@ -1,5 +1,10 @@
 #include "LlamaRuntime.h"
 
+// define windows stubs
+#ifdef WIN32
+#define strdup _strdup
+#endif
+
 // Constructor initializes pointers to null
 LlamaRuntime::LlamaRuntime() : model(nullptr), smpl(nullptr), ctx(nullptr) {}
 
@@ -185,7 +190,7 @@ bool LlamaRuntime::generateResponse(const std::string &input_prompt, void (*call
     }
 
     // add the response to the messages, this is the history context used to provide llm with context in future prompts
-    messages.push_back({"assistant", _strdup(response.c_str())});
+    messages.push_back({"assistant", strdup(response.c_str())});
     int prev_len = llama_chat_apply_template(llama_model_chat_template(model, nullptr), messages.data(), messages.size(), false, nullptr, 0);
     if (prev_len < 0) {
         error_ = "Error: failed to apply the chat template";

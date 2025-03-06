@@ -4,7 +4,7 @@
 
 LlamaEngine provides a dynamic way to integrate LLMs into native applications, enabling efficient **LLM interaction, prompt engineering, and natural language processing (NLP)** through backend selection and fine-grained AI context control. It allows **C/C++ clients** to load LLM models, such as **GGUF files** from **Hugging Face**, query metadata, and run inferences on various hardware backends supported by **llama.cpp**.  
 
-This project is a **spinoff from StarGit**, designed to enhance **local AI-driven development and automation pipelines**. It offers **source code analysis, security auditing, and development automation**—all without relying on cloud services, ensuring **security, transparency, and cost-effectiveness** for developers and enterprises.  
+This project is a [**spinoff from StarGit**](https://stargit.com), designed to enhance **local AI-driven development and automation pipelines**. It offers **source code analysis, security auditing, and development automation**—all without relying on cloud services, ensuring **security, transparency, and cost-effectiveness** for developers and enterprises.  
 
 ## **Key Features**  
 
@@ -52,15 +52,16 @@ A **C++ client**, `LlamaClient`, is available for interfacing with applications.
 - **Managing AI context and fine-tuning responses**.  
 - **Interacting with different llama.cpp backends** seamlessly. 
 
-## Use Case in StarGit  
+## Use Case in [**StarGit**](https://stargit.com)   
 
-LlamaEngine is integrated into **StarGit** to enable **AI-driven Git workflows**, including:  
+LlamaEngine is integrated into [**StarGit**](https://stargit.com) to enable **AI-driven Git workflows**, including:  
 
 - **Natural Language Git Commands**: AI-assisted Git interactions.  
 - **Development Pipeline Analysis**: Identify potential issues and suggest improvements.  
 - **Source Code Security Analysis**: Detect vulnerabilities in commits.  
 - **Code Review & Diff Analysis**: AI-assisted PR reviews.  
 - **Commit Message Generation**: AI-powered commit messages based on code changes. 
+- **AI-Powered Automation**: AI-driven development workflows and task optimizations. 
 
 This ensures that **LLM capabilities** are embedded **directly into the development process**, enhancing **security and automation** without external dependencies.  
 

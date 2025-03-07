@@ -1,5 +1,6 @@
 TEMPLATE = lib
-CONFIG += dll
+
+
 
 # Backend Selection (CPU, CUDA, Vulkan, etc.)
 isEmpty(BACKEND){
@@ -31,7 +32,7 @@ mac {
     GF=/Users/andreascarlen/GameFusion
 }
 
-QT -= gui
+QT -= gui qt core QtCore
 
 DEFINES += LlamaEngine_EXPORTS
 
@@ -59,12 +60,22 @@ mac {
 
     INCLUDEPATH += /opt/local/include
 
-    # Set the macOS library name prefix
-    QMAKE_LIB_PREFIX =
+    # Set the macOS library name prefix to an empty string
+    #QMAKE_LIB_PREFIX =  # This removes the default 'lib' prefix on macOS
+
+    # Explicitly set the output name to LlamaEngine.dylib
+    #TARGET = LlamaEngine.dylib  # Ensure the target name includes the .dylib extension
+
+
+    # Optional: Set the output name explicitly with .dylib extension
+    DESTDIR = bin/$${BACKEND}
 }
 
 # Windows-specific settings
 win32: {
+
+    CONFIG += dll
+
     CONFIG(debug, debug|release) {
         TARGET = $$join(TARGET,,,d)
     }

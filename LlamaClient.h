@@ -89,7 +89,7 @@ public:
      * @param userData User-defined data to pass to callbacks.
      * @return True if successful, false otherwise.
      */
-    bool generateResponse(onst std::string& prompt,
+    bool generateResponse(const std::string& prompt,
                           void (*streamCallback)(const char* msg, void* user_data),
                           void (*finishedCallback)(const char* msg, void* user_data), void *userData);
 

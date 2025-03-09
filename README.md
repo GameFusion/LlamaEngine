@@ -84,6 +84,67 @@ LlamaEngine aims to balance **modern C++20 features** with **low-level C optimiz
 
 Unlike cloud-based AI integrations, **LlamaEngine** offers a **local, transparent, and cost-effective** alternative for AI-driven software development. By combining **dynamic backend selection, security, and performance optimizations**, it provides an ideal solution for developers, researchers, and AI enthusiasts looking to integrate **LLMs into their workflows**.  
 
+You can add a section in the main `README.md` that provides a brief overview of key features and then link to `docs/USAGE.md` for more detailed examples. Here's how you could structure that section, with a focus on `generateResponse` using a lambda and `loadModel`.
+
+# LlamaClient
+
+LlamaClient is a simple interface for interacting with the Llama model and load the runtime driver. Below are some highlights showcasing how to use LlamaClient for common tasks like generating a response with a lambda function and loading a model into memory.
+
+## Key Features
+
+### 1. Load Model into Memory
+
+To use the model, you first need to load it into memory with the appropriate parameters. This step ensures that LlamaClient can use the model for generating responses.
+
+```cpp
+// Example of loading a model into memory
+float temperature = 0.7f;
+int contextSize = 4096;  // Increase context size
+float topK = 40.0f;
+float topP = 0.9f;
+float repetitionPenalty = 1.2f;
+std::string modelPath = "path/to/your/model";  // Replace with actual model path
+
+struct ModelParameter params[] = {
+    {"temperature", PARAM_FLOAT, &temperature},
+    {"context_size", PARAM_INT, &contextSize},
+    {"top_k", PARAM_FLOAT, &topK},
+    {"top_P", PARAM_FLOAT, &topP},
+    {"repetition_penalty", PARAM_FLOAT, &repetitionPenalty},
+    {"model_path", PARAM_STRING, (void*)modelPath.c_str()}
+};
+
+size_t paramCount = sizeof(params) / sizeof(params[0]);
+
+if (!client->loadModel(modelPath, params, paramCount, [](const char* message) {
+    std::cout << "Model loading: " << message << std::endl;
+})) {
+    std::cerr << "Failed to load model!" << std::endl;
+    delete client;
+    return 1;
+}
+```
+
+### 2. Generate Response with Lambda
+
+You can generate responses without needing to manually manage sessions. This is done by calling `generateResponse` and using callbacks to handle the stream of tokens and the final result.
+
+```cpp
+// Example of using generateResponse with lambda callbacks
+client->generateResponse("Hello, Llama!", 
+    [](const char* msg, void* userData) {
+        std::cout << msg;  // Streamed tokens
+    }, 
+    [](const char* msg, void* userData) {
+        std::cout << "\nFinal Response: " << msg << std::endl;  // Final response
+    }, 
+    nullptr);
+```
+
+## Get Started
+
+To get started with LlamaClient, check out the full usage examples in [docs/USAGE.md](docs/USAGE.md).
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.

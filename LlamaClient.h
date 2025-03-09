@@ -82,14 +82,31 @@ public:
     bool loadModel(const std::string& modelName, struct ModelParameter* params, size_t paramCount, void (*callback)(const char*) = nullptr);
 
     /**
-     * @brief Generates a response based on a given prompt.
+     * @brief Generates a response based on a given prompt.Using default session
      * @param prompt The input text to process.
      * @param streamCallback Callback for streaming tokens.
      * @param finishedCallback Callback for completion notification.
      * @param userData User-defined data to pass to callbacks.
      * @return True if successful, false otherwise.
      */
-    bool generateResponse(const std::string& prompt,
+    bool generateResponse(onst std::string& prompt,
+                          void (*streamCallback)(const char* msg, void* user_data),
+                          void (*finishedCallback)(const char* msg, void* user_data), void *userData);
+
+    /**
+     * @brief Generates a response from the Llama model using a given prompt.
+     *
+     * This function processes the input text, generating a response in token chunks
+     * via the streaming callback, followed by a final response callback when complete.
+     *
+     * @param sessionId The unique identifier for the session.
+     * @param prompt The input text prompt to process.
+     * @param streamCallback Function pointer to handle streamed response tokens.
+     * @param finishedCallback Function pointer to receive the full generated response.
+     * @param userData Optional user-defined data passed to both callbacks.
+     * @return True if the response generation was successful, false otherwise.
+     */
+    bool generateResponse(int sessionId, const std::string& prompt,
                           void (*streamCallback)(const char* msg, void* user_data),
                           void (*finishedCallback)(const char* msg, void* user_data), void *userData);
 
@@ -110,7 +127,7 @@ private:
 
     /** Function pointers for dynamic linking **/
     typedef bool (*LoadModelFunc)(const char*, struct ModelParameter* params, size_t paramCount, void (*)(const char*));
-    typedef bool (*GenerateResponseFunc)(const char*, void (*)(const char* token, void* user_data), void (*)(const char* completeResponse, void* user_data), void *userData);
+    typedef bool (*GenerateResponseFunc)(int sessionId, const char*, void (*)(const char* token, void* user_data), void (*)(const char* completeResponse, void* user_data), void *userData);
     typedef const char* (*ParseGGUFFunc)(const char*, void (*)(const char* key, GGUFType type, void* data, void *userData), void (*callback)(const char* message), void *userData);
 
 

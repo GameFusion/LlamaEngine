@@ -1,4 +1,5 @@
 #include "LlamaRuntime.h"
+#include "LlamaSession.h"
 
 // define windows stubs
 #ifdef WIN32
@@ -6,19 +7,11 @@
 #endif
 
 // Constructor initializes pointers to null
-LlamaRuntime::LlamaRuntime() : model(nullptr), smpl(nullptr), ctx(nullptr) {}
+LlamaRuntime::LlamaRuntime() : model(nullptr) {}
 
 // Destructor ensures proper resource cleanup
 LlamaRuntime::~LlamaRuntime() {
-    if (smpl) {
-        llama_sampler_free(smpl);
-        smpl = nullptr;
-    }
 
-    if (ctx) {
-        llama_free(ctx);
-        ctx = nullptr;
-    }
 
     if (model) {
         llama_model_free(model);
@@ -76,22 +69,39 @@ bool LlamaRuntime::loadModelInternal(const std::string &modelPath, int ngl, int 
     ctx_params.n_ctx = n_ctx;
     ctx_params.n_batch = n_ctx;
 
-    // Create the context with the model
-    ctx = llama_new_context_with_model(model, ctx_params);
-    if (!ctx) {
-        logError("Failed to create context");
-        error_ = "Failed to create context";
-        return false;
+    // Check if a session already exists, create a default one if there is none
+    if(sessions.empty())
+    {
+        sessions[0] = new LlamaSession("0", nullptr, nullptr);
+
     }
 
-    // Access the maximum context size
-    logMessage("Maximum context size: " + std::to_string(llama_n_ctx(ctx)));
+    // Recreate the context: For each active session, you need to create a new context using the new model.
+    // After changing the model, recreate the sampler to match the new model’s parameters.
+    // Recreate context and sampler for each active session
+    for (auto& [sessionId, session] : sessions) {
 
-    // Initialize the sampling chain with various parameters
-    smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
-    llama_sampler_chain_add(smpl, llama_sampler_init_min_p(0.05f, 1));
-    llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
-    llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+        // clear (free) pre existing sampler and context in session
+        session->clearSampler();
+        session->clearContext();
+
+        // Create new context for the session with the new model
+        session->ctx = llama_new_context_with_model(model, ctx_params);
+        if (!session->ctx) {
+            logError("Failed to recreate context for session " + sessionId);
+            error_ = "Failed to recreate context";
+            return false;
+        }
+
+        // Access the maximum context size
+        logMessage("Maximum context size: " + std::to_string(llama_n_ctx(session->ctx)));
+
+        // Initialize the sampler for the new model
+        session->smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
+        llama_sampler_chain_add(session->smpl, llama_sampler_init_min_p(0.05f, 1));
+        llama_sampler_chain_add(session->smpl, llama_sampler_init_temp(temperature));
+        llama_sampler_chain_add(session->smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    }
 
     // Resize formatted buffer for context size
     formatted.resize(n_ctx);
@@ -158,8 +168,44 @@ void LlamaRuntime::logError(const std::string& message) {
     logMessage("[ERROR] " + message);
 }
 
-// Generates a response based on user input
-bool LlamaRuntime::generateResponse(const std::string &input_prompt, void (*callback)(const char*, void *userData), void *userData) {
+/**
+ * @brief Retrieves a session by ID.
+ * @param session_id The session identifier.
+ * @return Pointer to the session, or nullptr if not found.
+ */
+LlamaSession *LlamaRuntime::getSession(int session_id){
+    // Try to find the session by session_id
+    auto it = sessions.find(session_id);
+
+    if (it == sessions.end()) {
+        // The session doesn't exist
+        return nullptr;
+    }
+
+    return it->second;
+}
+
+/**
+ * @brief Generates a response using the given session.
+ * @param session_id The session identifier.
+ * @param input_prompt The input text prompt.
+ * @param callback Function to handle generated response chunks.
+ * @param userData Custom user data for the callback.
+ * @return True if successful, false otherwise.
+ */
+bool LlamaRuntime::generateResponse(int session_id, const std::string &input_prompt, void (*callback)(const char*, void *userData), void *userData) {
+
+    LlamaSession *session = getSession(session_id);
+    if (session == nullptr) {
+        // The session exists but is nullptr (invalid session)
+        error_ = "Error: Session is invalid.";
+        logError(error_);
+        return false;
+    }
+
+    llama_context* ctx = session->ctx;
+    llama_sampler *smpl = session->smpl;
+
     if (!ctx || !model || !vocab) {
         error_ = "Error: Model not loaded.";
         logError(error_);
@@ -184,7 +230,7 @@ bool LlamaRuntime::generateResponse(const std::string &input_prompt, void (*call
     std::string prompt(formatted.begin(), formatted.begin() + new_len);
 
     // generate a response
-    if (!generate(prompt, callback, userData))
+    if (!generate(ctx, smpl, prompt, callback, userData))
     {
         return false;
     }
@@ -202,7 +248,7 @@ bool LlamaRuntime::generateResponse(const std::string &input_prompt, void (*call
 }
 
 // Generates a response token by token
-bool LlamaRuntime::generate(const std::string &prompt, void (*callback)(const char*, void *), void *userData) {
+bool LlamaRuntime::generate(llama_context* ctx, llama_sampler *smpl, const std::string &prompt, void (*callback)(const char*, void *), void *userData) {
     response.clear();
 
     const bool is_first = llama_get_kv_cache_used_cells(ctx) == 0;

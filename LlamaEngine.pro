@@ -40,6 +40,7 @@ INCLUDEPATH += $$PWD/include
 
 SOURCES += LlamaEngine.cpp LlamaRuntime.cpp
 HEADERS += LlamaEngine.h LlamaRuntime.h
+HEADERS += LlamaSession.h PromptResponse.h
 
 # macOS-specific settings
 mac {

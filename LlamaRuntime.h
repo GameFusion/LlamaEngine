@@ -5,11 +5,14 @@
 #include <vector>
 #include <functional>
 #include <iostream> // Optional: fallback to console output
+#include <unordered_map>
 
 #include "llama.h"
 #include "gguf.h"
 
 #include "GGUFMetadata.h"
+
+class LlamaSession;
 
 /**
  * @class LlamaRuntime
@@ -87,14 +90,24 @@ public:
     // -------------------------------------------------------------------------------------
 
     /**
-     * @brief Generates a response from the model based on an input prompt.
+     * @brief Generates a response from the model based on an input prompt for a specific session.
+     *
+     * This function retrieves the session identified by `session_id`, then processes
+     * the input prompt using the session's context and sampler. The generated response
+     * is streamed in chunks via the provided callback.
+     *
+     * @param session_id The ID of the session to use for generating the response.
      * @param input_prompt The text prompt provided by the user.
-     * @param callback Function pointer for handling generated responses.
+     * @param callback Function pointer for handling generated responses in chunks.
      * @param userData Optional user-defined data passed to the callback.
      * @return True if generation was successful, false otherwise.
+     *
+     * @note Ensure that the session exists before calling this function.
      */
-    bool generateResponse(const std::string &input_prompt, void (*callback)(const char*, void *userData), void *userData);
-
+    bool generateResponse(int session_id,
+                            const std::string &input_prompt,
+                            void (*callback)(const char*, void *userData),
+                            void *userData);
     /**
      * @brief Get the full response.
      */
@@ -150,13 +163,24 @@ public:
 private:
     /**
      * @brief Internal method to generate a response from the model.
-     * @param prompt The input text prompt.
-     * @param callback Function pointer for handling generated text.
-     * @param userData Optional user data passed to the callback.
-     * @return True if successful, false otherwise.
+     *
+     * This function executes the actual text generation using a given llama_context
+     * and sampler. The response is processed and streamed via the callback.
+     *
+     * @param ctx Pointer to the llama context associated with the session.
+     * @param smpl Pointer to the sampler used for text generation.
+     * @param prompt The input text prompt for generation.
+     * @param callback Function pointer for handling generated text chunks.
+     * @param userData Optional user-defined data passed to the callback.
+     * @return True if generation was successful, false otherwise.
+     *
+     * @note This function is called internally by `generateResponse` and requires a valid context.
      */
-    bool generate(const std::string &prompt, void (*callback)(const char*, void *), void *userData);
-
+    bool generate(llama_context* ctx,
+                  llama_sampler *smpl,
+                  const std::string &prompt,
+                  void (*callback)(const char*, void *),
+                  void *userData);
     /**
      * @brief Tokenizes an input prompt before feeding it to the model.
      * @param prompt The text to tokenize.
@@ -169,9 +193,7 @@ private:
     // Model Data Members
     // -------------------------------------------------------------------------------------
 
-    llama_context *ctx = nullptr;  ///< Pointer to the model's runtime context.
     llama_model *model = nullptr;  ///< Pointer to the loaded model.
-    llama_sampler *smpl = nullptr; ///< Pointer to the sampling handler.
     const llama_vocab *vocab = nullptr; ///< Pointer to model vocabulary.
 
     /**
@@ -196,6 +218,29 @@ private:
     std::string error_;                       ///< Last recorded error message.
     std::vector<std::string> errorMessages;   ///< List of error messages.
     std::string response;                     ///< Last generated response.
+
+    // -------------------------------------------------------------------------------------
+    // Session Management
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * @brief Retrieves a session by its session ID.
+     *
+     * This function looks up the session in the session map and returns a pointer to
+     * the associated LlamaSession instance if it exists.
+     *
+     * @param session_id The ID of the session to retrieve.
+     * @return Pointer to the LlamaSession if found, nullptr otherwise.
+     */
+    LlamaSession *getSession(int session_id);
+
+    /**
+     * @brief A map storing active Llama sessions.
+     *
+     * Each session is identified by a unique session ID and contains its
+     * own context and sampler for text generation.
+     */
+    std::unordered_map<int, LlamaSession*> sessions;
 
     // -------------------------------------------------------------------------------------
     // Model Configuration Parameters

@@ -138,7 +138,26 @@ bool LlamaClient::generateResponse(const std::string& prompt,
                                    void (*finishedCallback)(const char* msg, void* user_data),
                                    void *userData)
 {
-    return generateResponseFunc(prompt.c_str(), streamCallback, finishedCallback, userData);
+    const int sessionId = 0;
+    return generateResponseFunc(sessionId, prompt.c_str(), streamCallback, finishedCallback, userData);
+}
+
+/**
+ * @brief Generates a response from the model.
+ * @param sessionId The unique identifier for the session.
+ * @param prompt The input prompt.
+ * @param streamCallback Streaming callback.
+ * @param finishedCallback Finished response callback.
+ * @param userData User data pointer.
+ * @return True if the response was generated successfully, false otherwise.
+ */
+bool LlamaClient::generateResponse(int sessionId,
+                                   const std::string& prompt,
+                                   void (*streamCallback)(const char* msg, void* user_data),
+                                   void (*finishedCallback)(const char* msg, void* user_data),
+                                   void *userData)
+{
+    return generateResponseFunc(sessionId, prompt.c_str(), streamCallback, finishedCallback, userData);
 }
 
 /**

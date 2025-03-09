@@ -75,14 +75,25 @@ LlamaEngine_API bool loadModel(const char* backendType,
                                void (*callback)(const char*) = nullptr);
 
 /**
- * @brief Generates a response from the model based on a given prompt.
+ * @brief Generates a response from the model for a given session and prompt.
  *
+ * This function retrieves the session identified by `sessionId`, ensuring that
+ * the associated context and sampler are used. It processes the input prompt
+ * and generates a response, invoking callback functions to handle streaming
+ * and final output.
+ *
+ * @param sessionId The ID of the session to use for generating the response.
  * @param prompt Input text for the model to generate a response.
- * @param callback Function to handle generated response data.
- * @param userData Custom user data pointer passed to the callback.
+ * @param streamCallback Function to handle generated response data as it streams.
+ * @param finalCallback Function to handle the final generated response.
+ * @param userData Custom user data pointer passed to both callbacks.
  * @return True if the response was successfully generated, false otherwise.
+ *
+ * @note If the specified session does not exist, the function will return false.
+ *       Ensure that a valid session is created before calling this function.
  */
-LlamaEngine_API bool generateResponse(const char* prompt,
+LlamaEngine_API bool generateResponse(int sessionId,
+                                      const char* prompt,
                                       void (*streamCallback)(const char*, void* userData),
                                       void (*finalCallback)(const char*, void* userData),
                                       void* userData);

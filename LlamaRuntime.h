@@ -122,6 +122,12 @@ public:
     static GGUFMetadata parseGGUF(const std::string& filepath, void(*callback)(const char* message));
 
     // -------------------------------------------------------------------------------------
+    // Context
+    // -------------------------------------------------------------------------------------
+
+    std::string getContextInfo();
+
+    // -------------------------------------------------------------------------------------
     // Logging
     // -------------------------------------------------------------------------------------
 
@@ -159,6 +165,12 @@ public:
      * @param warningMessage The warning message.
      */
     void logWarning(const std::string& warningMessage);
+
+    /**
+     * @brief Logs a debug message. Format output type like '[DEBUG] message'
+     * @param debugMessage The warning message.
+     */
+    void logDebug(const std::string& debugMessage);
 
 private:
     /**

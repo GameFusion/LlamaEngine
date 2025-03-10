@@ -130,8 +130,13 @@ LlamaEngine_API bool generateResponse(int sessionID,
  * Get the latest complete response.
  * @return Returns the complete latest generated response.
  */
-const char* getLastResponse() {
+LlamaEngine_API const char* getLastResponse() {
     return runtimeContext->getResponse().c_str();
+}
+
+LlamaEngine_API void getContextInfo(void (*callback)(const char*info, void*userData), void* userData){
+    std::string result = runtimeContext->getContextInfo();
+    callback(result.c_str(), userData);
 }
 
 /**

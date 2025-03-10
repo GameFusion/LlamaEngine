@@ -1,6 +1,8 @@
 #include "LlamaRuntime.h"
 #include "LlamaSession.h"
 
+#include <sstream>
+
 // define windows stubs
 #ifdef WIN32
 #define strdup _strdup
@@ -168,6 +170,11 @@ void LlamaRuntime::logError(const std::string& message) {
     logMessage("[ERROR] " + message);
 }
 
+// Log debug messages
+void LlamaRuntime::logDebug(const std::string& message) {
+    logMessage("[DEBUG] " + message);
+}
+
 /**
  * @brief Retrieves a session by ID.
  * @param session_id The session identifier.
@@ -212,6 +219,15 @@ bool LlamaRuntime::generateResponse(int session_id, const std::string &input_pro
         return false;
     }
 
+    // Log context and KV cache usage before adding new message
+    int n_ctx_total = llama_n_ctx(ctx);
+    int n_ctx_used = llama_get_kv_cache_used_cells(ctx);
+    logDebug("Total context size: " + std::to_string(n_ctx_total) + "\n");
+    logDebug("KV Cache used: " + std::to_string(n_ctx_used) + "\n");
+
+    // Log current chat history size
+    logDebug("Messages in history: " + std::to_string(messages.size())+ "\n");
+
     // add the user input to the message list and format it
     messages.push_back({"user", strdup(input_prompt.c_str())});
 
@@ -229,6 +245,9 @@ bool LlamaRuntime::generateResponse(int session_id, const std::string &input_pro
     // remove previous messages to obtain the prompt to generate the response
     std::string prompt(formatted.begin(), formatted.begin() + new_len);
 
+    // Log tokenized prompt
+    logDebug("Tokenized prompt: " + prompt+ "\n");
+
     // generate a response
     if (!generate(ctx, smpl, prompt, callback, userData))
     {
@@ -237,19 +256,40 @@ bool LlamaRuntime::generateResponse(int session_id, const std::string &input_pro
 
     // add the response to the messages, this is the history context used to provide llm with context in future prompts
     messages.push_back({"assistant", strdup(response.c_str())});
+
+    /*
     int prev_len = llama_chat_apply_template(llama_model_chat_template(model, nullptr), messages.data(), messages.size(), false, nullptr, 0);
     if (prev_len < 0) {
         error_ = "Error: failed to apply the chat template";
         logError(error_);
         return false;
     }
+    */
 
     return true;
 }
 
+bool isValidUtf8(const std::string& str) {
+    const unsigned char* bytes = reinterpret_cast<const unsigned char*>(str.c_str());
+    int num = 0;
+    for (size_t i = 0; i < str.size(); i++) {
+        if (num == 0) {
+            if ((bytes[i] & 0x80) == 0) continue;  // ASCII (0xxxxxxx)
+            else if ((bytes[i] & 0xE0) == 0xC0) num = 1; // 2-byte (110xxxxx)
+            else if ((bytes[i] & 0xF0) == 0xE0) num = 2; // 3-byte (1110xxxx)
+            else if ((bytes[i] & 0xF8) == 0xF0) num = 3; // 4-byte (11110xxx)
+            else return false;  // Invalid first byte
+        } else {
+            if ((bytes[i] & 0xC0) != 0x80) return false; // Not a valid continuation byte
+            num--;
+        }
+    }
+    return num == 0;
+}
+
 // Generates a response token by token
 bool LlamaRuntime::generate(llama_context* ctx, llama_sampler *smpl, const std::string &prompt, void (*callback)(const char*, void *), void *userData) {
-    response.clear();
+    response.clear(); // TODO move to LlamaSession
 
     const bool is_first = llama_get_kv_cache_used_cells(ctx) == 0;
 
@@ -260,21 +300,19 @@ bool LlamaRuntime::generate(llama_context* ctx, llama_sampler *smpl, const std::
         return false;
     }
 
+    logDebug("Total tokens in prompt: " + std::to_string(prompt_tokens.size())+ "\n");
+
     llama_batch batch = llama_batch_get_one(prompt_tokens.data(), prompt_tokens.size());
     llama_token new_token_id;
     while (true) {
-        int n_ctx = llama_n_ctx(ctx);
+        int n_ctx_total = llama_n_ctx(ctx);
         int n_ctx_used = llama_get_kv_cache_used_cells(ctx);
-        if (n_ctx_used + batch.n_tokens > n_ctx) {
-            if (response.length()) {
-                error_ = "Error: Failed to tokenize the prompt";
-                logError(error_);
-                return false;
-            } else {
-                error_ = "Error: context size exceeded";
-                logError(error_);
-                return false;
-            }
+
+        logDebug("KV Cache before decoding: " + std::to_string(n_ctx_used) + " / " + std::to_string(n_ctx_total)+ "\n");
+
+        if (n_ctx_used + batch.n_tokens > n_ctx_total) {
+            logError("Context size exceeded! Used: " + std::to_string(n_ctx_used) + ", Limit: " + std::to_string(n_ctx_total)+ "\n");
+            return false;
         }
 
         if (llama_decode(ctx, batch)) {
@@ -289,15 +327,33 @@ bool LlamaRuntime::generate(llama_context* ctx, llama_sampler *smpl, const std::
             break;
         }
 
-        char buf[256];
+        char buf[256] = {0};  // Ensures all bytes are initialized to '\0'
+
         int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true);
         if (n < 0) {
             error_ = "Error: failed to convert token to piece";
             logError(error_);
             return false;
         }
-        std::string piece(buf, n);
-        if (callback) callback(piece.c_str(), userData);
+        //std::string piece(buf, n);
+        std::string piece;
+        piece.assign(buf, n);  // More robust than std::string(buf, n)
+
+        if (!isValidUtf8(piece)) {  // Validate UTF-8 (function provided below)
+            logDebug("Warning: Token ID " + std::to_string(new_token_id) + " produced invalid UTF-8, skipping.");
+            continue;
+        }
+        else
+        {
+            if(n > 0)
+                logDebug("Sampled Token ID: " + std::to_string(new_token_id) + " n(" + std::to_string(n)  + ") -> \"" + piece + "\"\n");
+            else
+                logDebug("Sampled Token ID with N=0: " + std::to_string(new_token_id) + "\n");
+            logDebug("KV Cache after decoding: " + std::to_string(llama_get_kv_cache_used_cells(ctx)) + " / " + std::to_string(n_ctx_total)+ "\n");
+
+            if (callback)
+                callback(piece.c_str(), userData);
+        }
 
         response += piece;
         batch = llama_batch_get_one(&new_token_id, 1);
@@ -397,4 +453,50 @@ GGUFMetadata LlamaRuntime::parseGGUF(const std::string& filepath, void (*message
     gguf_free(ctx);
 
     return metadata;
+}
+
+std::string LlamaRuntime::getContextInfo() {
+    std::stringstream ss;
+    ss << "Llama Context Information\n";
+    ss << "--------------------------\n";
+    ss << "Total Context Size: " << context_size << " tokens\n";
+
+    LlamaSession *session = getSession(0);
+
+    int total_char_count = 0;
+    int total_token_count = 0;
+
+    for (auto& [sessionId, session] : sessions) {
+
+        ss << "Total Messages: " << messages.size() << "\n";
+        for (size_t i = 0; i < messages.size(); i++) {
+            size_t char_count = strlen(messages[i].content);
+            int token_count = llama_tokenize(vocab, messages[i].content, char_count, nullptr, 0, true, false);
+            total_char_count += char_count;
+            total_token_count += token_count;
+
+            ss << "Message " << i << " | Role: " << messages[i].role
+               << " | Size: " << char_count << " chars, " << token_count << " tokens\n";
+        }
+
+        int used_size = total_token_count;
+        int remaining_size = context_size - used_size;
+
+        ss << "\nUsed Context Size: " << used_size << " tokens\n";
+        ss << "Remaining Context Size: " << remaining_size << " tokens\n\n";
+    }
+
+    ss << "Details per Prompt Response:\n";
+    for (auto& [sessionId, session] : sessions) {
+
+        ss << "Session ID: " << session->sessionId << "\n";
+        for (const auto& msg : session->history) {
+            ss << "  - Prompt: " << msg.prompt << "\n";
+            ss << "    Response: " << msg.response << "\n";
+            //ss << "    Token Count: " << msg.tokenCount << "\n";
+            ss << "    Timestamp: " << msg.timestamp << "\n";
+        }
+    }
+
+    return ss.str();
 }

@@ -45,8 +45,9 @@ LlamaClient::LlamaClient(const std::string &backendType, const std::string& dllP
     loadModelFunc = (LoadModelFunc)GetProcAddress(hDll, "loadModel");
     generateResponseFunc = (GenerateResponseFunc)GetProcAddress(hDll, "generateResponse");
     parseGGUFFunc = (ParseGGUFFunc)GetProcAddress(hDll, "parseGGUF");
+    getContextInfoFunc = (GetContextInfoFunc)GetProcAddress(hDll, "getContextInfo");
 
-    if (!loadModelFunc || !generateResponseFunc || !parseGGUFFunc) {
+    if (!loadModelFunc || !generateResponseFunc || !parseGGUFFunc || !getContextInfoFunc) {
         FreeLibrary(hDll);
         throw std::runtime_error("Failed to locate functions in LlamaEngine.dll!");
     }
@@ -63,8 +64,9 @@ LlamaClient::LlamaClient(const std::string &backendType, const std::string& dllP
     loadModelFunc = (LoadModelFunc)dlsym(hDll, "loadModel");
     generateResponseFunc = (GenerateResponseFunc)dlsym(hDll, "generateResponse");
     parseGGUFFunc = (ParseGGUFFunc)dlsym(hDll, "parseGGUF");
+    getContextInfoFunc = (GetContextInfoFunc)dlsym(hDll, "getContextInfo");
 
-    if (!loadModelFunc || !generateResponseFunc || !parseGGUFFunc ) {
+    if (!loadModelFunc || !generateResponseFunc || !parseGGUFFunc || !getContextInfoFunc) {
         const char* errorMsg = dlerror();
         std::ostringstream oss;
         oss << "Failed to locate functions in LlamaEngine.dylib! Error: " << (errorMsg ? errorMsg : "Unknown error");
@@ -234,4 +236,18 @@ std::string LlamaClient::backendType()
 std::string LlamaClient::libraryName()
 {
     return library;
+}
+
+std::string LlamaClient::getContextInfo(){
+
+    std::string result;
+    getContextInfoFunc([](const char *info, void *userData){
+        // Cast userData to std::string reference
+        std::string &result = *static_cast<std::string*>(userData);
+
+        // Assign the result to the string passed through userData
+        result = info;
+    }, &result);
+
+    return result;
 }

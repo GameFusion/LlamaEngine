@@ -100,6 +100,8 @@ LlamaEngine_API bool generateResponse(int sessionId,
 
 LlamaEngine_API const char* getLastResponse(); // Retrieve the latest full response
 
+LlamaEngine_API void getContextInfo(void (*callback)(const char* info, void *userData), void* userData = nullptr); // Retrieve context stats and descriptive info
+
 /**
  * @brief Parses a GGUF file and retrieves metadata attributes via a callback.
  *
@@ -110,6 +112,7 @@ LlamaEngine_API const char* getLastResponse(); // Retrieve the latest full respo
  * @return A dynamically allocated string containing parsed metadata (caller must free).
  */
 typedef void (*GGUFAttributeCallback)(const char* key, GGUFType type, void* value, void* user_data);
+
 LlamaEngine_API char* parseGGUF(const char* filepath,
                                 GGUFAttributeCallback callback,
                                 void (*messageCallback)(const char* message),

@@ -110,6 +110,8 @@ public:
                           void (*streamCallback)(const char* msg, void* user_data),
                           void (*finishedCallback)(const char* msg, void* user_data), void *userData);
 
+    std::string getContextInfo();
+
     /**
      * @brief Parses GGUF metadata from a file.
      * @param filepath Path to the GGUF file.
@@ -117,6 +119,8 @@ public:
      * @return Parsed GGUFMetadata object.
      */
     GGUFMetadata parseGGUF(const std::string& filepath, void (*callback)(const char* message));
+
+
 
 private:
 #ifdef _WIN32
@@ -129,12 +133,12 @@ private:
     typedef bool (*LoadModelFunc)(const char*, struct ModelParameter* params, size_t paramCount, void (*)(const char*));
     typedef bool (*GenerateResponseFunc)(int sessionId, const char*, void (*)(const char* token, void* user_data), void (*)(const char* completeResponse, void* user_data), void *userData);
     typedef const char* (*ParseGGUFFunc)(const char*, void (*)(const char* key, GGUFType type, void* data, void *userData), void (*callback)(const char* message), void *userData);
-
+    typedef void (*GetContextInfoFunc)(void (*callback)(const char* info, void *), void*);
 
     LoadModelFunc loadModelFunc; ///< Function pointer for loading models
     GenerateResponseFunc generateResponseFunc; ///< Function pointer for generating responses
     ParseGGUFFunc parseGGUFFunc; ///< Function pointer for parsing GGUF metadata
-
+    GetContextInfoFunc getContextInfoFunc;
     /**
      * @brief Handles streaming response tokens.
      * @param response The response token received.

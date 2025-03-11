@@ -4,7 +4,48 @@
 #include <list>
 #include <string>
 #include <ctime>
+
+#ifdef WIN32
+
+#include <intrin.h>
+
+struct UUID {
+    unsigned long  Data1;
+    unsigned short Data2;
+    unsigned short Data3;
+    unsigned char  Data4[8];
+
+    void generate() {
+        Data1 = __rdtsc(); // Use TSC for entropy
+        Data2 = (unsigned short)(__rdtsc() >> 16);
+        Data3 = (unsigned short)(__rdtsc() & 0xFFFF);
+
+        for (int i = 0; i < 8; ++i) {
+            Data4[i] = (unsigned char)(__rdtsc() >> (i * 4));
+        }
+
+        // Set UUID version to 4 (random-based)
+        Data3 = (Data3 & 0x0FFF) | (4 << 12);
+        // Set variant (RFC 4122)
+        Data4[0] = (Data4[0] & 0x3F) | 0x80;
+    }
+
+    std::string toString() const {
+        char buffer[37];  // UUID string is 36 characters + null terminator
+        std::snprintf(buffer, sizeof(buffer),
+                      "%08lx-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+                      Data1, Data2, Data3,
+                      Data4[0], Data4[1],
+                      Data4[2], Data4[3], Data4[4], Data4[5], Data4[6], Data4[7]);
+
+        return std::string(buffer);
+    }
+};
+
+
+#else
 #include <uuid/uuid.h>
+#endif
 
 #include "llama.h"
 #include "gguf.h"
@@ -39,11 +80,18 @@ public:
     LlamaSession(std::string name, llama_context* context, llama_sampler *sampler)
         : sessionName(std::move(name)), timestamp(time(nullptr)), ctx(context), smpl(sampler)
     {
+
+#ifdef WIN32
+        UUID uuid;
+        uuid.generate();
+        sessionId = uuid.toString();
+#else
         uuid_t uuid;
         char uuidStr[37];
         uuid_generate(uuid);
         uuid_unparse(uuid, uuidStr);
         sessionId = std::string(uuidStr); ///< Generates a unique session ID.
+#endif
     }
 
     /**

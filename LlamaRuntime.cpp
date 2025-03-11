@@ -459,6 +459,7 @@ std::string LlamaRuntime::getContextInfo() {
     std::stringstream ss;
     ss << "Llama Context Information\n";
     ss << "--------------------------\n";
+    ss << "Model Path: " << modelPath << "\n";
     ss << "Total Context Size: " << context_size << " tokens\n";
 
     LlamaSession *session = getSession(0);

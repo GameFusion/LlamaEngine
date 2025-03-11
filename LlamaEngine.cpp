@@ -118,8 +118,12 @@ LlamaEngine_API bool generateResponse(int sessionID,
                                       void (*streamCallback)(const char*, void* userData),
                                       void (*finalCallback)(const char*, void* userData),
                                       void* userData) {
-    int session_id = 0;
-    bool ret = runtimeContext->generateResponse(session_id, prompt, streamCallback, userData);
+    if (!runtimeContext) {
+        if (streamCallback)
+            streamCallback("Error: Runtime context is not initialized.", userData);
+        return false;
+    }
+    bool ret = runtimeContext->generateResponse(sessionID, prompt, streamCallback, userData);
     if(ret && finalCallback)
         finalCallback(runtimeContext->getResponse().c_str(), userData);
 
@@ -135,6 +139,12 @@ LlamaEngine_API const char* getLastResponse() {
 }
 
 LlamaEngine_API void getContextInfo(void (*callback)(const char*info, void*userData), void* userData){
+    if (!runtimeContext) {
+        if (callback)
+            callback("Error: Runtime context is not initialized.", userData);
+        return;
+    }
+
     std::string result = runtimeContext->getContextInfo();
     callback(result.c_str(), userData);
 }

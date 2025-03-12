@@ -129,6 +129,8 @@ private:
     void* hDll; ///< Handle to the loaded shared library
 #endif
 
+    void LoadLibrary(const std::string& dllPath);
+
     /** Function pointers for dynamic linking **/
     typedef bool (*LoadModelFunc)(const char*, struct ModelParameter* params, size_t paramCount, void (*)(const char*));
     typedef bool (*GenerateResponseFunc)(int sessionId, const char*, void (*)(const char* token, void* user_data), void (*)(const char* completeResponse, void* user_data), void *userData);

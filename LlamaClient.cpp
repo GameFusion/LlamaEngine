@@ -2,6 +2,8 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <sys/stat.h>
+#include <filesystem>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -12,6 +14,55 @@
 // Static member variable for storing creation error messages
 std::string LlamaClient::createError;
 
+bool SetemLoadLibrary(const std::string& relativePath, LlamaClient** clientPtr, const std::string& backendType) {
+    // Verify if the file exists
+    struct stat buffer;
+    if (stat(relativePath.c_str(), &buffer) != 0) {
+        std::cerr << "File does not exist: " << relativePath << std::endl;
+        return false;
+    }
+
+    std::cout << "File exists: " << relativePath << std::endl;
+
+    // Get the absolute directory path and filename
+    std::filesystem::path filePath(relativePath);
+    std::string libraryPath = std::filesystem::absolute(filePath.parent_path()).string();
+    std::string fileName = filePath.filename().string();
+
+    std::cout << "Library Path: " << libraryPath << std::endl;
+
+#ifdef WIN32
+    // Convert to wide string for Windows API
+    std::wstring wLibraryPath(libraryPath.begin(), libraryPath.end());
+
+    // Set the DLL directory using the absolute path
+    if (SetDllDirectoryW(wLibraryPath.c_str())) {
+        std::cout << "SetDllDirectoryW succeeded: " << libraryPath << std::endl;
+
+        // Now initialize the LlamaClient with just the filename, not the full path
+        try {
+            *clientPtr = new LlamaClient(backendType, fileName);
+            return true;
+        } catch (const std::exception& e) {
+            std::cerr << "Failed to initialize LlamaClient: " << e.what() << std::endl;
+            return false;
+        }
+    } else {
+        DWORD error = GetLastError();
+        std::cerr << "SetDllDirectoryW failed! Error code: " << error << std::endl;
+        return false;
+    }
+#else
+    // For non-Windows platforms, use the full path
+    try {
+        *clientPtr = new LlamaClient(backendType, relativePath);
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to initialize LlamaClient: " << e.what() << std::endl;
+        return false;
+    }
+#endif
+}
 /**
  * @brief Constructor for LlamaClient.
  * @param backendType The type of backend used.
@@ -22,35 +73,97 @@ LlamaClient::LlamaClient(const std::string &backendType, const std::string& dllP
     backend = backendType;
     library = dllPath;
 
-#ifdef _WIN32
-    hDll = LoadLibraryA(dllPath.c_str());
-    if (!hDll) {
-        DWORD errorCode = GetLastError();
-        LPVOID errorMsg;
+    LoadLibrary(dllPath);
+}
 
-        FormatMessageA(
-            FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-            NULL, errorCode, 0, (LPSTR)&errorMsg, 0, NULL
-            );
+void LlamaClient::LoadLibrary(const std::string& dllPath)
+{
+    std::string relativePath = dllPath;
 
+    // Verify if the file exists
+    struct stat buffer;
+    if (stat(relativePath.c_str(), &buffer) != 0) {
+        std::cerr << "File does not exist: " << relativePath << std::endl;
         std::ostringstream oss;
-        oss << "Failed to load LlamaEngine.dll! Error code: " << errorCode << " - " << (char*)errorMsg;
-
-        LocalFree(errorMsg); // Free allocated memory
-
+        oss << "File does not exist: " << relativePath;
+        createError = oss.str();
         throw std::runtime_error(oss.str());
     }
 
-    // Load function pointers
-    loadModelFunc = (LoadModelFunc)GetProcAddress(hDll, "loadModel");
-    generateResponseFunc = (GenerateResponseFunc)GetProcAddress(hDll, "generateResponse");
-    parseGGUFFunc = (ParseGGUFFunc)GetProcAddress(hDll, "parseGGUF");
-    getContextInfoFunc = (GetContextInfoFunc)GetProcAddress(hDll, "getContextInfo");
+    std::cout << "File exists: " << relativePath << std::endl;
 
-    if (!loadModelFunc || !generateResponseFunc || !parseGGUFFunc || !getContextInfoFunc) {
-        FreeLibrary(hDll);
-        throw std::runtime_error("Failed to locate functions in LlamaEngine.dll!");
+    // Get the absolute path
+    char absolutePath[MAX_PATH];
+    GetFullPathNameA(relativePath.c_str(), MAX_PATH, absolutePath, NULL);
+    std::string fullPath = absolutePath;
+
+    // Extract directory path - find last backslash
+    size_t lastSlash = fullPath.find_last_of("\\/");
+    std::string libraryPath;
+    std::string fileName;
+
+    if (lastSlash != std::string::npos) {
+        fileName = fullPath.substr(lastSlash + 1);
+        libraryPath = fullPath.substr(0, lastSlash);
+    } else {
+        // No path separator found - use current directory
+        fileName = relativePath;
+        char currentDir[MAX_PATH];
+        GetCurrentDirectoryA(MAX_PATH, currentDir);
+        libraryPath = currentDir;
     }
+
+    std::cout << "Library Path: " << libraryPath << std::endl;
+    std::cout << "File Name: " << fileName << std::endl;
+
+#ifdef _WIN32
+
+    // Convert to wide string for Windows API
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, libraryPath.c_str(), -1, NULL, 0);
+    wchar_t* wLibraryPath = new wchar_t[size_needed];
+    MultiByteToWideChar(CP_UTF8, 0, libraryPath.c_str(), -1, wLibraryPath, size_needed);
+
+    // Set the DLL directory using the absolute path
+    bool success = false;
+    if (SetDllDirectoryW(wLibraryPath)) {
+
+        std::cout << "SetDllDirectoryW succeeded: " << libraryPath << std::endl;
+
+        hDll = LoadLibraryA(dllPath.c_str());
+        if (!hDll) {
+            DWORD errorCode = GetLastError();
+            LPVOID errorMsg;
+
+            FormatMessageA(
+                FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                NULL, errorCode, 0, (LPSTR)&errorMsg, 0, NULL
+                );
+
+            std::ostringstream oss;
+            oss << "Failed to load LlamaEngine.dll! Error code: " << errorCode << " - " << (char*)errorMsg;
+
+            LocalFree(errorMsg); // Free allocated memory
+
+            throw std::runtime_error(oss.str());
+        }
+
+        // Load function pointers
+        loadModelFunc = (LoadModelFunc)GetProcAddress(hDll, "loadModel");
+        generateResponseFunc = (GenerateResponseFunc)GetProcAddress(hDll, "generateResponse");
+        parseGGUFFunc = (ParseGGUFFunc)GetProcAddress(hDll, "parseGGUF");
+        getContextInfoFunc = (GetContextInfoFunc)GetProcAddress(hDll, "getContextInfo");
+
+        if (!loadModelFunc || !generateResponseFunc || !parseGGUFFunc || !getContextInfoFunc) {
+            FreeLibrary(hDll);
+            throw std::runtime_error("Failed to locate functions in LlamaEngine.dll!");
+        }
+    } else {
+        DWORD error = GetLastError();
+        std::cerr << "SetDllDirectoryW failed! Error code: " << error << std::endl;
+    }
+
+    // Clean up allocated memory
+    delete[] wLibraryPath;
 
 #elif __APPLE__
     hDll = dlopen(dllPath.c_str(), RTLD_LAZY);

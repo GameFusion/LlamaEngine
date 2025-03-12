@@ -3,7 +3,7 @@
 # -------------------------------------------------
 
 QT += core gui widgets network
-
+CONFIG += c++20
 # Target Configuration
 TEMPLATE = app
 

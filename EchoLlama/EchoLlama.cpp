@@ -24,8 +24,10 @@ EchoLlama::EchoLlama(QWidget *parent)
     // Initialize UI components
     chatDisplay->setReadOnly(true);
     chatDisplay->setMinimumHeight(160);
+    //chatDisplay->setCurrentCharFormat()
     promptInput->setFixedHeight(46);
     promptInput->setMinimumHeight(46);
+
 
     // Apply the styles
     applyStyles();
@@ -59,7 +61,7 @@ void EchoLlama::initializeLlama() {
 #ifdef __APPLE__
     const char* enginePath = "llama.cpp/gguf-v0.4.0-3352-g855cd073/metal/libLlamaEngine.1.dylib";
 #elif WIN32
-    const char* enginePath = "LlamaEngine.dll";
+    const char* enginePath = "D:/GameFusion/Applications/LlamaEngine/build-EchoLlama-Desktop_Qt_5_15_0_MSVC2019_64bit-Debug/debug/llama.cpp/gguf-v0.4.0-3477-ga800ae46/cuda/LlamaEngined.dll";
 #else
     const char* enginePath = "LlamaEngine.so";
 #endif
@@ -78,7 +80,11 @@ void EchoLlama::initializeLlama() {
 
 bool EchoLlama::loadLlama() {
     QString homeDir = QDir::homePath();
+#ifdef __APPLE__
     QString modelPath = homeDir + "/.cache/EchoLlama/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf";
+#elif WIN32
+    QString modelPath = "D:/llm-studio-models/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF/qwen2.5-coder-3b-instruct-q4_k_m.gguf";
+#endif
     int contextSize = 4096;
     float temperature = 0.7f;
     float topK = 40;
@@ -214,6 +220,34 @@ void EchoLlama::sendClicked() {
     promptInput->clear();
 }
 
+void applyModernScrollbarStyle(QTextEdit* textEdit) {
+    // Get the vertical scrollbar specifically
+    QScrollBar* verticalScrollBar = textEdit->verticalScrollBar();
+
+    QString scrollbarStyle = R"(
+        QScrollBar:vertical {
+            border: none;
+            background: transparent;
+            width: 10px;
+            margin: 0px;
+            border-radius: 5px;
+        }
+        QScrollBar::handle:vertical {
+            background: darkgray;
+            min-height: 20px;
+            border-radius: 5px;
+        }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+            height: 0px;
+            background: none;
+        }
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+            background: none;
+        }
+    )";
+
+    verticalScrollBar->setStyleSheet(scrollbarStyle);
+}
 
 void EchoLlama::applyStyles() {
     // Apply general styles
@@ -227,30 +261,11 @@ void EchoLlama::applyStyles() {
     // Set style for chatDisplay
     chatDisplay->setStyleSheet(
         "QTextEdit {"
-        "   border-radius: 12px;"
-        "   background-color: transparent;"
+        "background-color: #272931;"
+        "border-radius: 15px;"
         "   font-size: 16px;" // Increased font size
         "}"
-        "QScrollBar:vertical {"
-        "   border: none;"
-        "   background: transparent;"
-        "   width: 10px;"
-        "   margin: 0px 0px 0px 0px;"
-        "}"
-        "QScrollBar::handle:vertical {"
-        "   background: gray;"
-        "   border-radius: 5px;"
-        "   min-height: 20px;"
-        "}"
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
-        "   background: none;"
-        "   height: 0px;"
-        "}"
-        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
-        "   background: none;"
-        "}"
         );
-
 
     inputGroup->setStyleSheet(
         "QWidget {"
@@ -258,6 +273,8 @@ void EchoLlama::applyStyles() {
         "border-radius: 15px;"
         "}"
         );
+
+    applyModernScrollbarStyle(chatDisplay);
 
     // Set style for promptInput
     promptInput->setStyleSheet(
@@ -267,6 +284,12 @@ void EchoLlama::applyStyles() {
         "   border-radius: 0px;"
         "   font-size: 16px;" // Increased font size
         "}"
+        "QPlainTextEdit::placeholder {"
+        "   color: gray;"
+        "}"
+        "QPlainTextEdit[placeholderText] {"
+            "   color: gray;"
+            "}"
         "QScrollBar:vertical {"
         "   border: none;"
         "   background: transparent;"
@@ -286,5 +309,20 @@ void EchoLlama::applyStyles() {
         "   background: none;"
         "}"
         );
+
+    sendButton->setStyleSheet(
+        "QPushButton {"
+        "   color: darkgray;"
+        "}");
+
+    QTextCursor cursor = chatDisplay->textCursor();
+    QTextCharFormat format;
+    format.setForeground(Qt::gray); // #c8a2c8 in RGB
+    chatDisplay->setCurrentCharFormat(format);
+
+    cursor = promptInput->textCursor();
+    promptInput->setCurrentCharFormat(format);
+
+
 }
 

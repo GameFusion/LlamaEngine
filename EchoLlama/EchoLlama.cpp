@@ -6,26 +6,48 @@
 #include <QTextEdit>
 #include <QScrollBar>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QGuiApplication>
 #include <QTimer>
 #include <QDir>
 #include <QCoreApplication>
 #include <QDebug>
 
+
 EchoLlama::EchoLlama(QWidget *parent)
-    : QWidget(parent), chatDisplay(new QTextEdit(this)), promptInput(new QPlainTextEdit(this)) {
+    : QWidget(parent), chatDisplay(new QTextEdit(this)), promptInput(new QPlainTextEdit(this)), sendButton(new QPushButton("Send", this)) {
 
+    // Set style for inputGroup
+    inputGroup = new QWidget(this);
+    inputGroup->setFixedHeight(75);
+
+    // Initialize UI components
     chatDisplay->setReadOnly(true);
-    chatDisplay->setMinimumHeight(150);
+    chatDisplay->setMinimumHeight(160);
+    promptInput->setFixedHeight(46);
+    promptInput->setMinimumHeight(46);
 
-    promptInput->setFixedHeight(48);
+    // Apply the styles
+    applyStyles();
 
+    // Set placeholder text for promptInput
+    promptInput->setPlaceholderText("Ask Anything");
+
+    // Create a horizontal layout for the input group
+    QVBoxLayout* inputLayout = new QVBoxLayout(inputGroup);
+    inputLayout->addWidget(promptInput);
+    inputLayout->addWidget(sendButton, 0, Qt::AlignRight);
+
+    // Main layout
     QVBoxLayout* layout = new QVBoxLayout(this);
     layout->addWidget(chatDisplay);
-    layout->addWidget(promptInput);
+    layout->addWidget(inputGroup);
 
+    // Connect signals to slots
     connect(promptInput, &QPlainTextEdit::textChanged, this, &EchoLlama::handleTextChange);
+    connect(sendButton, &QPushButton::clicked, this, &EchoLlama::sendClicked);
 
+    // Initialize Llama after a short delay
     QTimer::singleShot(200, this, &EchoLlama::initializeLlama);
 }
 
@@ -42,11 +64,12 @@ void EchoLlama::initializeLlama() {
     const char* enginePath = "LlamaEngine.so";
 #endif
     qDebug() << "Binary path:" << QCoreApplication::applicationFilePath();
-    chatDisplay->append("Binary path:" + QCoreApplication::applicationFilePath()+"\n");
+    //chatDisplay->append("Binary path:" + QCoreApplication::applicationFilePath()+"\n");
 
     llamaClient = LlamaClient::Create("CUDA", enginePath);
     if (!llamaClient) {
         chatDisplay->append(LlamaClient::GetCreateError().c_str());
+        chatDisplay->append("Binary path:" + QCoreApplication::applicationFilePath()+"\n");
         return;
     }
 
@@ -86,8 +109,67 @@ bool EchoLlama::loadLlama() {
 }
 
 void EchoLlama::processPrompt(const QString& prompt) {
-    chatDisplay->append("Prompt: " + prompt + "\n");
+    //chatDisplay->append("Prompt: " + prompt + "\n");
+    QTextCursor cursor = chatDisplay->textCursor();
+    cursor.movePosition(QTextCursor::End);
+
+    cursor.insertBlock(); // insert new block for the prompt
+
+    // Create a QTextBlockFormat for the block formatting options
+    QTextBlockFormat blockFormat;
+    blockFormat.setLeftMargin(100); // Set the left margin to 20 pixels
+    blockFormat.setTopMargin(10);
+    blockFormat.setLineHeight(25, QTextBlockFormat::FixedHeight);
+    //blockFormat.setLineSpacing(QTextBlockFormat::FixedHeight, 20.0); // Set line spacing to 20 pixels
+
+    // Apply the block format to the current block
+    cursor.setBlockFormat(blockFormat);
+
+    QTextCharFormat format;
+    format.setForeground(Qt::gray); // #c8a2c8 in RGB
+    cursor.setBlockCharFormat(format);
+
+    cursor.insertText(prompt);
+
+    // Ensure the scroll bar is updated to the bottom
+    chatDisplay->ensureCursorVisible();
+
+    cursor.insertBlock(); // insert new block for the response
+
+    cursor.movePosition(QTextCursor::End);
+    chatDisplay->ensureCursorVisible();
+
+    QGuiApplication::processEvents();
+
     generateResponse(prompt);
+}
+
+void EchoLlama::responseCallback(const char* msg, void* userData) {
+    QTextCursor cursor = chatDisplay->textCursor();
+    cursor.movePosition(QTextCursor::End);
+
+    // Create a QTextBlockFormat for the block formatting options
+    QTextBlockFormat blockFormat;
+    blockFormat.setLeftMargin(0); // Set the left margin to 20 pixels
+    blockFormat.setLineHeight(25, QTextBlockFormat::FixedHeight); // Set line spacing to 25 pixels
+    // Apply the block format to the current block
+    cursor.setBlockFormat(blockFormat);
+
+    QTextCharFormat format;
+    format.setForeground(Qt::white); // #c8a2c8 in RGB
+    cursor.setBlockCharFormat(format);
+
+    cursor.insertText(msg);
+
+
+
+    // Ensure the scroll bar is updated to the bottom
+    cursor.movePosition(QTextCursor::End);
+    chatDisplay->ensureCursorVisible();
+
+
+
+    QGuiApplication::processEvents();
 }
 
 void EchoLlama::generateResponse(const QString& prompt) {
@@ -107,12 +189,6 @@ void EchoLlama::generateResponse(const QString& prompt) {
     );
 }
 
-void EchoLlama::responseCallback(const char* msg, void* userData) {
-    QTextCursor cursor = chatDisplay->textCursor();
-    cursor.movePosition(QTextCursor::End);
-    cursor.insertText(msg);
-    QGuiApplication::processEvents();
-}
 
 void EchoLlama::finishedCallback(const char* msg, void* userData) {
     // Optional: Handle any cleanup after response is finished
@@ -125,8 +201,90 @@ void EchoLlama::handleTextChange() {
         if (!(modifiers & Qt::ShiftModifier)) {
             text.chop(1);
             processPrompt(text);
+            QGuiApplication::processEvents();
             promptInput->clear();
         }
     }
+}
+
+void EchoLlama::sendClicked() {
+    // Handle the send button click
+    processPrompt(promptInput->toPlainText());
+    QGuiApplication::processEvents();
+    promptInput->clear();
+}
+
+
+void EchoLlama::applyStyles() {
+    // Apply general styles
+    this->setStyleSheet(
+        "QWidget {"
+        "outline: 0;"
+        "background-color: #272931;"
+        "}"
+        );
+
+    // Set style for chatDisplay
+    chatDisplay->setStyleSheet(
+        "QTextEdit {"
+        "   border-radius: 12px;"
+        "   background-color: transparent;"
+        "   font-size: 16px;" // Increased font size
+        "}"
+        "QScrollBar:vertical {"
+        "   border: none;"
+        "   background: transparent;"
+        "   width: 10px;"
+        "   margin: 0px 0px 0px 0px;"
+        "}"
+        "QScrollBar::handle:vertical {"
+        "   background: gray;"
+        "   border-radius: 5px;"
+        "   min-height: 20px;"
+        "}"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
+        "   background: none;"
+        "   height: 0px;"
+        "}"
+        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
+        "   background: none;"
+        "}"
+        );
+
+
+    inputGroup->setStyleSheet(
+        "QWidget {"
+        "background-color: #1c1e24;"
+        "border-radius: 15px;"
+        "}"
+        );
+
+    // Set style for promptInput
+    promptInput->setStyleSheet(
+        "QPlainTextEdit {"
+        "   border: 0px solid darkgray;"
+        "   background-color: #1c1e24;"
+        "   border-radius: 0px;"
+        "   font-size: 16px;" // Increased font size
+        "}"
+        "QScrollBar:vertical {"
+        "   border: none;"
+        "   background: transparent;"
+        "   width: 10px;"
+        "   margin: 0px 0px 0px 0px;"
+        "}"
+        "QScrollBar::handle:vertical {"
+        "   background: darkgray;"
+        "   border-radius: 5px;"
+        "   min-height: 20px;"
+        "}"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
+        "   background: none;"
+        "   height: 0px;"
+        "}"
+        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
+        "   background: none;"
+        "}"
+        );
 }
 

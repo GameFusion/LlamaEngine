@@ -6,6 +6,7 @@
 class LlamaClient;
 class QTextEdit;
 class QPlainTextEdit;
+class QPushButton;
 
 /**
  * @file EchoLlama.h
@@ -57,6 +58,11 @@ private slots:
      */
     void processPrompt(const QString& prompt);
 
+    /**
+     * @brief Slot to handle the send button click event.
+     */
+    void sendClicked();
+
 private:
     /**
      * @brief Text edit widget for displaying chat messages.
@@ -64,9 +70,19 @@ private:
     QTextEdit* chatDisplay;
 
     /**
+     * @brief Widget group containing input components (promptInput and sendButton).
+     */
+    QWidget* inputGroup;
+
+    /**
      * @brief Plain text edit widget for user input prompts.
      */
     QPlainTextEdit* promptInput;
+
+    /**
+     * @brief Send button to process user input prompts.
+     */
+    QPushButton *sendButton;
 
     /**
      * @brief Pointer to the Llama client instance.
@@ -92,6 +108,11 @@ private:
      * @return True if the model loads successfully, false otherwise.
      */
     bool loadLlama();
+
+    /**
+     * @brief Applies styles to UI components (chatDisplay, inputGroup, promptInput, sendButton).
+     */
+    void applyStyles();
 };
 
 #endif // EchoLlama_h

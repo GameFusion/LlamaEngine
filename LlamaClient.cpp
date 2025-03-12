@@ -78,6 +78,8 @@ LlamaClient::LlamaClient(const std::string &backendType, const std::string& dllP
 
 void LlamaClient::LoadLibrary(const std::string& dllPath)
 {
+
+    #ifdef _WIN32
     std::string relativePath = dllPath;
 
     // Verify if the file exists
@@ -116,7 +118,7 @@ void LlamaClient::LoadLibrary(const std::string& dllPath)
     std::cout << "Library Path: " << libraryPath << std::endl;
     std::cout << "File Name: " << fileName << std::endl;
 
-#ifdef _WIN32
+
 
     // Convert to wide string for Windows API
     int size_needed = MultiByteToWideChar(CP_UTF8, 0, libraryPath.c_str(), -1, NULL, 0);

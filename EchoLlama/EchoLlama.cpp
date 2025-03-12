@@ -151,6 +151,10 @@ void EchoLlama::processPrompt(const QString& prompt) {
 }
 
 void EchoLlama::responseCallback(const char* msg, void* userData) {
+    // Save current scrollbar position and check if it was at the bottom
+    QScrollBar* scrollBar = chatDisplay->verticalScrollBar();
+    bool wasAtBottom = scrollBar->value() == scrollBar->maximum();
+
     QTextCursor cursor = chatDisplay->textCursor();
     cursor.movePosition(QTextCursor::End);
 
@@ -167,14 +171,21 @@ void EchoLlama::responseCallback(const char* msg, void* userData) {
 
     cursor.insertText(msg);
 
-
+    // Set the modified cursor back to the text edit
+    chatDisplay->setTextCursor(cursor);
 
     // Ensure the scroll bar is updated to the bottom
     cursor.movePosition(QTextCursor::End);
     chatDisplay->ensureCursorVisible();
 
+    // Only auto-scroll if we were already at the bottom before adding text
+    if (wasAtBottom) {
+        chatDisplay->moveCursor(QTextCursor::End);
+        chatDisplay->ensureCursorVisible();
+    }
 
-
+    // Force an update
+    chatDisplay->update();
     QGuiApplication::processEvents();
 }
 

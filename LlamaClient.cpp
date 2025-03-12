@@ -58,6 +58,7 @@ LlamaClient::LlamaClient(const std::string &backendType, const std::string& dllP
         const char* errorMsg = dlerror();
         std::ostringstream oss;
         oss << "Failed to load LlamaEngine.dylib! Error: " << (errorMsg ? errorMsg : "Unknown error");
+        createError = oss.str();
         throw std::runtime_error(oss.str());
     }
 
@@ -71,6 +72,7 @@ LlamaClient::LlamaClient(const std::string &backendType, const std::string& dllP
         std::ostringstream oss;
         oss << "Failed to locate functions in LlamaEngine.dylib! Error: " << (errorMsg ? errorMsg : "Unknown error");
         dlclose(hDll);
+        createError = oss.str();
         throw std::runtime_error(oss.str());
     }
 #endif

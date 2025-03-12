@@ -6,6 +6,13 @@ LlamaEngine provides a dynamic way to integrate LLMs into native applications, e
 
 This project is a module spin-off from [**StarGit**](https://stargit.com), now an open-source initiative aimed at enhancing local AI-driven development and automation pipelines — without relying on cloud services, ensuring **security, transparency, and cost-effectiveness** for developers and enterprises.  
 
+---
+
+**EchoLlama*, the demo client for LlamaEngine, running on Windows:
+![EchoLlama Windows Screenshot](docs/images/echollama-windows.png)  
+
+---
+
 ## **Key Features**  
 
 - **AI-Powered Automation**: Serves as a backend for **automated AI analysis and process optimization**. 

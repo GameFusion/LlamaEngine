@@ -1,0 +1,52 @@
+# -------------------------------------------------
+# EchoLlama.pro - QMake Project File for EchoLlama
+# -------------------------------------------------
+
+QT += core gui widgets network
+
+# Target Configuration
+TEMPLATE = app
+
+# Source Files
+SOURCES += \
+    main.cpp \
+    EchoLlama.cpp \
+    ../LlamaClient.cpp
+
+HEADERS += \
+    EchoLlama.h \
+    ..//LlamaClient.h
+
+# Include Paths
+INCLUDEPATH += \
+    .\
+    ../
+
+# Output Directory
+DESTDIR = .
+
+# Export Macros
+DEFINES += \
+    QT_NO_DEBUG
+
+# Configuration for different platforms
+win32: {
+    DEFINES += WIN32
+}
+macx: {
+    DEFINES += MACX
+}
+unix: {
+    DEFINES += UNIX
+}
+
+# QMake Configuration
+CONFIG += c++17
+
+# Additional Options
+QMAKE_CXXFLAGS += -Wall
+
+# Final Project File
+TARGET = EchoLlama
+
+

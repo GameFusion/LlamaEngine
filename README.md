@@ -145,6 +145,72 @@ client->generateResponse("Hello, Llama!",
 
 To get started with LlamaClient, check out the full usage examples in [docs/USAGE.md](docs/USAGE.md).
 
+Here's a section for your `README.md`:  
+
+---
+
+## EchoLlama  
+
+EchoLlama is a Qt-based chat client for interacting with Llama models. It is located in the `EchoLlama` subdirectory and requires the compilation of **LlamaEngine** in the project root directory.  
+
+### Compilation & Dependencies  
+
+To run EchoLlama, you need to build **LlamaEngine** and ensure the required **llama.cpp** libraries are available in the correct architecture-specific locations.  
+
+For macOS (debug build), libraries should be structured as follows:  
+
+```
+LlamaEngine/EchoLlama/build/Qt_6_7_0_for_macOS-Debug/EchoLlama.app/Contents/MacOS/
+├── llama.cpp/gguf-v0.4.0-3352-g855cd073/metal/
+│   ├── libLlamaEngine.1.dylib
+│   ├── libggml.dylib
+│   ├── libggml-base.dylib
+│   ├── libggml-blas.dylib
+│   ├── libllama.dylib
+│   ├── libggml-cpu.dylib
+│   ├── libggml-metal.dylib
+```
+
+You can adjust the library path in **EchoLlama** by modifying the `initializeLlama` function:  
+
+```cpp
+void EchoLlama::initializeLlama() {
+#ifdef __APPLE__
+    const char* enginePath = "llama.cpp/gguf-v0.4.0-3352-g855cd073/metal/libLlamaEngine.1.dylib";
+#elif WIN32
+    const char* enginePath = "LlamaEngine.dll";
+#else
+    const char* enginePath = "LlamaEngine.so";
+#endif
+}
+```
+
+### Bundling LlamaEngine on macOS  
+
+A Python script is provided to assist in bundling `libLlamaEngine.1.dylib` and the required `llama.cpp` libraries for macOS.  
+
+#### Usage  
+
+For **debug mode**:  
+```sh
+python bundle_llama.cpp_macos.py debug
+```
+
+For **release mode**:  
+```sh
+python bundle_llama.cpp_macos.py release
+```
+
+You may need to adjust paths depending on your system's Llama.cpp root and build directory.
+
+---
+
+## Running EchoLlama  
+
+Once compiled, launch `EchoLlama` and start prompting the model. Here's a preview of EchoLlama running on macOS:  
+
+![EchoLlama Screenshot](docs/images/echollama-macos.png)  
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.

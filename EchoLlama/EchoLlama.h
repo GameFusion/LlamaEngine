@@ -7,6 +7,7 @@ class LlamaClient;
 class QTextEdit;
 class QPlainTextEdit;
 class QToolButton;
+class QComboBox;
 
 /**
  * @file EchoLlama.h
@@ -63,6 +64,12 @@ private slots:
      */
     void sendClicked();
 
+    void handleArchitectureChange();
+    void handleModelSelectionChange();
+    void showModelInfo();
+    void downloadModel();
+    void showSettings();
+
 private:
     /**
      * @brief Text edit widget for displaying chat messages.
@@ -88,6 +95,16 @@ private:
      * @brief Pointer to the Llama client instance.
      */
     LlamaClient* llamaClient;
+
+    QComboBox *modelSelectionComboBox;
+    QComboBox *architectureComboBox;
+    QToolButton *modelInfoButton;
+    QToolButton *downloadButton;
+    QToolButton *settingsButton;
+
+    void loadCuratedModels();
+
+    void setupUI();
 
     /**
      * @brief Callback function to handle incoming response messages.

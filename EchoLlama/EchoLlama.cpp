@@ -12,14 +12,146 @@
 #include <QDir>
 #include <QCoreApplication>
 #include <QDebug>
+#include <QMessageBox>
 
 #include "FontAwesome.h"
 
 EchoLlama::EchoLlama(QWidget *parent)
     : QWidget(parent), chatDisplay(new QTextEdit(this)), promptInput(new QPlainTextEdit(this)), sendButton(new QToolButton(this)) {
 
+    // Initialize UI components
+    setupUI();
+
+    // Apply the styles
+    applyStyles();
+
+    // Load curated models from JSON config file
+    loadCuratedModels();
+
+    // Connect signals to slots
+    connect(promptInput, &QPlainTextEdit::textChanged, this, &EchoLlama::handleTextChange);
+    connect(sendButton, &QToolButton::clicked, this, &EchoLlama::sendClicked);
+
+    // Initialize Llama after a short delay
+    QTimer::singleShot(200, this, &EchoLlama::initializeLlama);
+}
+
+EchoLlama::~EchoLlama() {
+    delete llamaClient;
+}
+
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QComboBox>
+
+void EchoLlama::loadCuratedModels() {
+
+    QString modelsFilePath = "/Users/andreascarlen/GameFusion/Applications/LlamaEngine/EchoLlama/Resources/models.json";
+    QFile file(modelsFilePath);
+    if (!file.exists()) {
+        qDebug() << "File not found!";
+        return;
+    }
+
+    if (!file.open(QIODevice::ReadOnly)){
+        qDebug() << "Failed to open file!";
+        return;
+    }
+
+    QByteArray data = file.readAll();
+    file.close();
+
+    //QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+
+    // Create a QJsonParseError to capture any errors during parsing
+    QJsonParseError parseError;
+    QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
+
+    if (doc.isNull() || !doc.isArray()) {
+        qDebug() << "Error parsing JSON at line" << parseError.errorString();
+
+        return;
+    }
+
+    //QJsonObject jsonObject = doc.array();
+    QJsonArray modelsArray = doc.array();
+
+    // Populate model selection dropdown
+    for (int i = 0; i < modelsArray.size(); ++i) {
+        QJsonObject modelObject = modelsArray[i].toObject();
+        QString modelName = modelObject["name"].toString();
+        modelSelectionComboBox->addItem(modelName);
+    }
+}
+
+#include <QAbstractItemView>
+
+void EchoLlama::setupUI() {
+
     QFont fa = FontAwesome::getFontAwesome();
     fa.setPointSize(20);
+
+    //////////////////////////
+    //
+    // Setup the header top bar
+    //
+
+    // Architecture selection dropdown
+    architectureComboBox = new QComboBox(this);
+    connect(architectureComboBox, &QComboBox::currentIndexChanged, this, &EchoLlama::handleArchitectureChange);
+
+    // Model information icon button
+    modelInfoButton = new QToolButton(this);
+    modelInfoButton->setFont(fa);
+    modelInfoButton->setText(QChar(0xf05a));  // Information icon
+    modelInfoButton->setToolTip("Model Information");
+    connect(modelInfoButton, &QToolButton::clicked, this, &EchoLlama::showModelInfo);
+
+    // Download icon button
+    downloadButton = new QToolButton(this);
+    downloadButton->setFont(fa);
+    downloadButton->setText(QChar(0xf019));  // Download icon
+    downloadButton->setToolTip("Download Model from Huging Faces");
+    connect(downloadButton, &QToolButton::clicked, this, &EchoLlama::downloadModel);
+
+    // Settings icon button
+    settingsButton = new QToolButton(this);
+    settingsButton->setFont(fa);
+    settingsButton->setText(QChar(0xf013));  // Settings icon
+    settingsButton->setToolTip("Model Settings");
+    connect(settingsButton, &QToolButton::clicked, this, &EchoLlama::showSettings);
+
+    // Model selection dropdown
+    modelSelectionComboBox = new QComboBox(this);
+    connect(modelSelectionComboBox, &QComboBox::currentIndexChanged, this, &EchoLlama::handleModelSelectionChange);
+
+    // Top bar layout
+    QHBoxLayout* topBarLayout = new QHBoxLayout();
+
+    topBarLayout->setContentsMargins(0, 10, 0, 10);  // Remove all margins
+    topBarLayout->addWidget(architectureComboBox);
+    topBarLayout->addWidget(modelSelectionComboBox);
+    topBarLayout->addWidget(downloadButton);
+    topBarLayout->addWidget(settingsButton);
+    topBarLayout->addWidget(modelInfoButton);
+
+    architectureComboBox->addItem("CPU");
+    architectureComboBox->addItem("CUDA");
+    architectureComboBox->addItem("Vulkan");
+    architectureComboBox->addItem("Metal");
+
+    // Set the size policy to allow shrinking
+    architectureComboBox->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+
+    // Adjust the combo box width based on the content
+    architectureComboBox->setMaximumWidth(architectureComboBox->view()->sizeHintForColumn(0) + 30);  // Add padding if needed
+
+    //////////////////////////
+    //
+    // Setup the chat area
+    //
+
     sendButton->setFont(fa);
     sendButton->setText(QChar(0xf1d8));  // Paper plane icon
     sendButton->setToolTip("Send");
@@ -37,8 +169,7 @@ EchoLlama::EchoLlama(QWidget *parent)
     promptInput->setMinimumHeight(46);
 
 
-    // Apply the styles
-    applyStyles();
+
 
     // Set placeholder text for promptInput
     promptInput->setPlaceholderText("Ask Anything");
@@ -59,20 +190,15 @@ EchoLlama::EchoLlama(QWidget *parent)
 
     // Main layout
     QVBoxLayout* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(20, 0, 20, 20);
+    layout->addLayout(topBarLayout);
     layout->addWidget(chatDisplay);
     layout->addWidget(inputGroup);
 
-    // Connect signals to slots
-    connect(promptInput, &QPlainTextEdit::textChanged, this, &EchoLlama::handleTextChange);
-    connect(sendButton, &QToolButton::clicked, this, &EchoLlama::sendClicked);
 
-    // Initialize Llama after a short delay
-    QTimer::singleShot(200, this, &EchoLlama::initializeLlama);
 }
 
-EchoLlama::~EchoLlama() {
-    delete llamaClient;
-}
+
 
 void EchoLlama::initializeLlama() {
 #ifdef __APPLE__
@@ -277,7 +403,65 @@ void applyModernScrollbarStyle(QTextEdit* textEdit) {
     verticalScrollBar->setStyleSheet(scrollbarStyle);
 }
 
+void applyStylesToWidgets(QLayout* layout) {
+    if (!layout) return;
+
+    // Loop through all items in the layout
+    for (int i = 0; i < layout->count(); ++i) {
+        // Get the layout item
+        QLayoutItem* item = layout->itemAt(i);
+        if (!item) continue;
+
+        // Check if the item is a layout
+        if (QLayout* subLayout = item->layout()) {
+            // Recursive call for nested layouts
+            applyStylesToWidgets(subLayout);
+        } else {
+            // It's a widget (QWidget)
+            QWidget* widget = item->widget();
+            if (widget) {
+                // Apply style to QToolButton
+                if (QToolButton* toolButton = qobject_cast<QToolButton*>(widget)) {
+                    toolButton->setStyleSheet(R"(
+                        QToolButton {
+                            color: #929292;
+                            background: transparent;
+                            border: none;
+                            font-size: 16px;
+                        }
+                        QToolButton:hover {
+                            color: #00AEEF;
+                        }
+                        QToolButton:pressed {
+                            color: #0077CC;
+                        }
+                    )");
+                }
+                // Apply style to QComboBox
+                else if (QComboBox* comboBox = qobject_cast<QComboBox*>(widget)) {
+                    comboBox->setStyleSheet(R"(
+                        QComboBox {
+                            border: none;
+                            background: transparent;
+                            padding-left: 6px;
+                            color: #929292;
+                            font-size: 12px;
+                        }
+                    QComboBox::drop-down {
+                            subcontrol-position:  left;
+                        }
+                    )");
+                }
+            }
+        }
+    }
+}
+
 void EchoLlama::applyStyles() {
+
+
+    applyStylesToWidgets(this->layout());
+
     // Apply general styles
     this->setStyleSheet(
             "QWidget {"
@@ -361,8 +545,44 @@ void EchoLlama::applyStyles() {
     chatDisplay->setCurrentCharFormat(format);
 
     cursor = promptInput->textCursor();
+    format.setForeground(QColor(230, 230, 230)); // #c8a2c8 in RGB
     promptInput->setCurrentCharFormat(format);
 
 
 }
+
+void EchoLlama::handleArchitectureChange() {
+    QString selectedArch = architectureComboBox->currentText();
+    // Update the LlamaClient with the selected architecture
+    //llamaClient.setArchitecture(selectedArch);
+}
+
+void EchoLlama::handleModelSelectionChange() {
+    QString selectedModel = modelSelectionComboBox->currentText();
+    // Load and configure the selected model
+    //llamaClient.loadModel(selectedModel);
+
+    // TODO
+    // check if model exists and has been downloaded
+    // model file should be in <home>./cache/EchoLlamma/<selectedModel>
+    // if model file exists hide the download button
+    // if model does not exist show download button
+
+}
+
+void EchoLlama::showModelInfo() {
+    QMessageBox::information(this, "Model Info", "Detailed information about the selected model.");
+}
+
+void EchoLlama::downloadModel() {
+    QString selectedModel = modelSelectionComboBox->currentText();
+    // Download the selected model
+    //llamaClient.downloadModel(selectedModel);
+    qDebug() << "Model selected: " << selectedModel;
+}
+
+void EchoLlama::showSettings() {
+    QMessageBox::information(this, "Settings", "Configuration options for the LlamaEngine.");
+}
+
 

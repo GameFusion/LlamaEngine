@@ -13,11 +13,15 @@ SOURCES += \
     main.cpp \
     EchoLlama.cpp \
     FontAwesome.cpp \
+    DownloadManager.cpp \
+    NetworkUtils.cpp \
     ../LlamaClient.cpp
 
 HEADERS += \
     EchoLlama.h \
     FontAwesome.h \
+    DownloadManager.h \
+    NetworkUtils.h \
     ..//LlamaClient.h
 
 # Include Paths

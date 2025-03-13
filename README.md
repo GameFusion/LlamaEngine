@@ -9,7 +9,7 @@ This project is a module spin-off from [**StarGit**](https://stargit.com), now a
 ---
 
 **EchoLlama*, the demo client for LlamaEngine, running on Windows:
-![EchoLlama Windows Screenshot](docs/images/echollama-windows.png)  
+![EchoLlama Windows Screenshot](docs/images/echollama-windows-002.png)  
 
 ---
 
@@ -25,6 +25,36 @@ This project is a module spin-off from [**StarGit**](https://stargit.com), now a
 - **Security & Transparency**: Designed for **on-premise AI execution**, ensuring full **source code analysis** and **security auditing**.   
 
 ## Build Instructions  
+
+## **Build Instructions**  
+
+### **Requirements**  
+LlamaEngine depends on **llama.cpp**, which must be **built from source** and structured as specified in the `.pro` file.  
+
+A `llama_version.h` file is also required, containing build metadata for `llama.cpp`:  
+
+```cpp
+#ifndef LLAMA_VERSION_H
+#define LLAMA_VERSION_H
+
+#define LLAMA_COMMIT_VERSION "gguf-v0.4.0-3477-ga800ae46"
+#define LLAMA_COMMIT_DATE "Wed Feb 26 15:26:52 2025 +0100"
+#define LLAMA_COMMIT_HASH "a800ae46da2ed7dac236aa6bf2b595da6b6294b5"
+
+#endif // LLAMA_VERSION_H
+```
+
+### **Automation**  
+Python scripts are provided to **package llama.cpp shared libraries** and **generate `llama_version.h` automatically**:  
+
+- **Windows:** `bundle_llama.cpp_windows.py`  
+- **macOS:** `bundle_llama.cpp_macos.py`  
+
+### **Notice**  
+Currently, to build **LlamaEngine**, users may need to **modify the Python scripts and `.pro` file** to set the correct location of the **llama.cpp** dependency.  
+
+#### **Future Improvements**  
+The build process will be further refined, and **prebuilt binaries** are planned for upcoming releases.  
 
 ### Using QMake (Recommended)  
 

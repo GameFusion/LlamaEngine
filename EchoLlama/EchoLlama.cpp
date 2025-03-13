@@ -6,16 +6,24 @@
 #include <QTextEdit>
 #include <QScrollBar>
 #include <QPlainTextEdit>
-#include <QPushButton>
+#include <QToolButton>
 #include <QGuiApplication>
 #include <QTimer>
 #include <QDir>
 #include <QCoreApplication>
 #include <QDebug>
 
+#include "FontAwesome.h"
 
 EchoLlama::EchoLlama(QWidget *parent)
-    : QWidget(parent), chatDisplay(new QTextEdit(this)), promptInput(new QPlainTextEdit(this)), sendButton(new QPushButton("Send", this)) {
+    : QWidget(parent), chatDisplay(new QTextEdit(this)), promptInput(new QPlainTextEdit(this)), sendButton(new QToolButton(this)) {
+
+    QFont fa = FontAwesome::getFontAwesome();
+    fa.setPointSize(20);
+    sendButton->setFont(fa);
+    sendButton->setText(QChar(0xf1d8));  // Paper plane icon
+    sendButton->setToolTip("Send");
+    sendButton->setCursor(Qt::PointingHandCursor);  // Make it look clickable
 
     // Set style for inputGroup
     inputGroup = new QWidget(this);
@@ -38,7 +46,16 @@ EchoLlama::EchoLlama(QWidget *parent)
     // Create a horizontal layout for the input group
     QVBoxLayout* inputLayout = new QVBoxLayout(inputGroup);
     inputLayout->addWidget(promptInput);
-    inputLayout->addWidget(sendButton, 0, Qt::AlignRight);
+    // Create a horizontal layout for the send button
+    QHBoxLayout* buttonLayout = new QHBoxLayout();
+    buttonLayout->addWidget(sendButton, 0, Qt::AlignRight);
+
+    // Spacer to offset the button by -10 pixels to the left (after the button)
+    QSpacerItem* spacer = new QSpacerItem(10, 0, QSizePolicy::Fixed, QSizePolicy::Minimum);
+    buttonLayout->addItem(spacer); // This adds the spacer to the right of the button
+
+    // Add the button layout to the main layout
+    inputLayout->addLayout(buttonLayout);
 
     // Main layout
     QVBoxLayout* layout = new QVBoxLayout(this);
@@ -47,7 +64,7 @@ EchoLlama::EchoLlama(QWidget *parent)
 
     // Connect signals to slots
     connect(promptInput, &QPlainTextEdit::textChanged, this, &EchoLlama::handleTextChange);
-    connect(sendButton, &QPushButton::clicked, this, &EchoLlama::sendClicked);
+    connect(sendButton, &QToolButton::clicked, this, &EchoLlama::sendClicked);
 
     // Initialize Llama after a short delay
     QTimer::singleShot(200, this, &EchoLlama::initializeLlama);
@@ -263,68 +280,80 @@ void applyModernScrollbarStyle(QTextEdit* textEdit) {
 void EchoLlama::applyStyles() {
     // Apply general styles
     this->setStyleSheet(
-        "QWidget {"
-        "outline: 0;"
-        "background-color: #272931;"
-        "}"
+            "QWidget {"
+            "outline: 0;"
+            "background-color: #272931;"
+            "}"
         );
 
     // Set style for chatDisplay
     chatDisplay->setStyleSheet(
-        "QTextEdit {"
-        "background-color: #272931;"
-        "border-radius: 15px;"
-        "   font-size: 16px;" // Increased font size
-        "}"
+            "QTextEdit {"
+            "background-color: #272931;"
+            "border-radius: 15px;"
+            "   font-size: 16px;" // Increased font size
+            "}"
         );
 
     inputGroup->setStyleSheet(
-        "QWidget {"
-        "background-color: #1c1e24;"
-        "border-radius: 15px;"
-        "}"
+            "QWidget {"
+            "background-color: #1c1e24;"
+            "border-radius: 15px;"
+            "}"
         );
 
     applyModernScrollbarStyle(chatDisplay);
 
     // Set style for promptInput
     promptInput->setStyleSheet(
-        "QPlainTextEdit {"
-        "   border: 0px solid darkgray;"
-        "   background-color: #1c1e24;"
-        "   border-radius: 0px;"
-        "   font-size: 16px;" // Increased font size
-        "}"
-        "QPlainTextEdit::placeholder {"
-        "   color: gray;"
-        "}"
-        "QPlainTextEdit[placeholderText] {"
+            "QPlainTextEdit {"
+            "   border: 0px solid darkgray;"
+            "   background-color: #1c1e24;"
+            "   border-radius: 0px;"
+            "   font-size: 16px;" // Increased font size
+            "}"
+            "QPlainTextEdit::placeholder {"
             "   color: gray;"
             "}"
-        "QScrollBar:vertical {"
-        "   border: none;"
-        "   background: transparent;"
-        "   width: 10px;"
-        "   margin: 0px 0px 0px 0px;"
-        "}"
-        "QScrollBar::handle:vertical {"
-        "   background: darkgray;"
-        "   border-radius: 5px;"
-        "   min-height: 20px;"
-        "}"
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
-        "   background: none;"
-        "   height: 0px;"
-        "}"
-        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
-        "   background: none;"
-        "}"
+            "QPlainTextEdit[placeholderText] {"
+                "   color: gray;"
+                "}"
+            "QScrollBar:vertical {"
+            "   border: none;"
+            "   background: transparent;"
+            "   width: 10px;"
+            "   margin: 0px 0px 0px 0px;"
+            "}"
+            "QScrollBar::handle:vertical {"
+            "   background: darkgray;"
+            "   border-radius: 5px;"
+            "   min-height: 20px;"
+            "}"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
+            "   background: none;"
+            "   height: 0px;"
+            "}"
+            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
+            "   background: none;"
+            "}"
         );
 
-    sendButton->setStyleSheet(
-        "QPushButton {"
-        "   color: darkgray;"
-        "}");
+
+
+    sendButton->setStyleSheet(R"(
+        QToolButton {
+            color: white;
+            background: transparent;
+            border: none;
+            }
+        QToolButton:hover {
+                color: #00AEEF;
+            }
+            QToolButton:pressed {
+                color: #0077CC;
+            }
+        )");
+
 
     QTextCursor cursor = chatDisplay->textCursor();
     QTextCharFormat format;

@@ -6,15 +6,18 @@ QT += core gui widgets network
 CONFIG += c++20
 # Target Configuration
 TEMPLATE = app
+RESOURCES += resources.qrc
 
 # Source Files
 SOURCES += \
     main.cpp \
     EchoLlama.cpp \
+    FontAwesome.cpp \
     ../LlamaClient.cpp
 
 HEADERS += \
     EchoLlama.h \
+    FontAwesome.h \
     ..//LlamaClient.h
 
 # Include Paths

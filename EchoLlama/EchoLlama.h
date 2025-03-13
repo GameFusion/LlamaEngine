@@ -6,7 +6,7 @@
 class LlamaClient;
 class QTextEdit;
 class QPlainTextEdit;
-class QPushButton;
+class QToolButton;
 
 /**
  * @file EchoLlama.h
@@ -82,7 +82,7 @@ private:
     /**
      * @brief Send button to process user input prompts.
      */
-    QPushButton *sendButton;
+    QToolButton *sendButton;
 
     /**
      * @brief Pointer to the Llama client instance.

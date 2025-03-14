@@ -36,6 +36,10 @@ DESTDIR = .
 DEFINES += \
     QT_NO_DEBUG
 
+CONFIG(debug, debug|release) {
+    DEFINES += DEBUG
+}
+
 # Configuration for different platforms
 win32: {
     DEFINES += WIN32

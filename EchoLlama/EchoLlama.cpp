@@ -51,6 +51,9 @@ EchoLlama::EchoLlama(QWidget *parent)
     downloadManager = new DownloadManager(this);
 
     setupConnections();
+
+    QGuiApplication::processEvents();
+
     // Initialize Llama after a short delay
     QTimer::singleShot(200, this, &EchoLlama::initializeLlama);
 }
@@ -246,7 +249,6 @@ void EchoLlama::setupConnections() {
     connect(modelSelectionComboBox, &QComboBox::currentIndexChanged, this, &EchoLlama::handleModelSelectionChange);
 }
 
-
 void EchoLlama::initializeLlama() {
     if (llamaClient)
         return;
@@ -270,7 +272,11 @@ void EchoLlama::initializeLlama() {
 #ifdef __APPLE__
     const QString libraryFileName = "libLlamaEngine.1.dylib";
 #elif defined(WIN32)
-    const QString libraryFileName = "LlamaEngine.dll";
+    #ifdef DEBUG
+       const QString libraryFileName = "LlamaEngined.dll";
+    #else
+        const QString libraryFileName = "LlamaEngine.dll";
+    #endif
 #else
     const QString libraryFileName = "LlamaEngine.so";
 #endif
@@ -294,6 +300,10 @@ void EchoLlama::initializeLlama() {
     }
 
     loadLlama();
+
+    handleModelSelectionChange();
+
+    QGuiApplication::processEvents();
 }
 
 QJsonObject EchoLlama::getSelectedModelObject() {
@@ -391,6 +401,12 @@ bool EchoLlama::loadLlama() {
     };
 
     size_t paramCount = sizeof(params) / sizeof(params[0]);
+
+    QFile modelFile(modelPathFile);
+    if(!modelFile.exists()) {
+        qDebug() << "EchoLlama model file does not exist: " << modelPathFile;
+        return false;
+    }
 
     bool success = llamaClient->loadModel(modelPathFile.toUtf8().constData(), params, paramCount);
     if (!success) {
@@ -626,8 +642,27 @@ void EchoLlama::applyStyles() {
             "QWidget {"
             "outline: 0;"
             "background-color: #272931;"
+            "color: white;"
             "}"
         );
+
+    progressBar->setStyleSheet(R"(
+        QProgressBar {
+            border: 0px solid #444;
+            border-radius: 3px;
+            background-color: #3d3f46;
+            height: 6px;
+            text-align: center;
+        }
+
+        QProgressBar::chunk {
+            background-color: #0077CC;
+            border-radius: 3px;
+        }
+    )");
+
+    progressBar->setMaximumHeight(6);
+    progressBar->setTextVisible(false); // Hide the percentage text
 
     // Set style for chatDisplay
     chatDisplay->setStyleSheet(
@@ -681,8 +716,6 @@ void EchoLlama::applyStyles() {
             "}"
         );
 
-
-
     sendButton->setStyleSheet(R"(
         QToolButton {
             color: white;
@@ -710,7 +743,7 @@ void EchoLlama::applyStyles() {
 
 }
 
-void EchoLlama::handleArchitectureChange() {
+void EchoLlama::handleArchitectureChange(int index) {
     QString selectedArch = architectureComboBox->currentText();
 
     // prototype

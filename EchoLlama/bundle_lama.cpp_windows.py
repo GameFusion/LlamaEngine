@@ -4,17 +4,17 @@ import shutil
 
 import sys
 
-REL_PATH = "../build-EchoLlama-Desktop_Qt_5_15_0_MSVC2019_64bit-Release/release/"
+REL_PATH = "../build-EchoLlama-Desktop_Qt_6_6_1_MSVC2019_64bit-Release/release/Resources/"
 debug=False
 
 if len(sys.argv) > 1:
     if sys.argv[1] == 'debug':
         print("Debug mode is enabled")
-        REL_PATH = "../build-EchoLlama-Desktop_Qt_5_15_0_MSVC2019_64bit-Debug/debug/"
+        REL_PATH = "../build-EchoLlama-Desktop_Qt_6_6_1_MSVC2019_64bit-Debug/debug/Resources/"
         debug = True
     elif sys.argv[1] == 'release':
         print("Release mode enabled")
-        REL_PATH = "../build-EchoLlama-Desktop_Qt_5_15_0_MSVC2019_64bit-Release/release/"
+        REL_PATH = "../build-EchoLlama-Desktop_Qt_6_6_1_MSVC2019_64bit-Release/release/Resources/"
     elif sys.argv[1] == 'test':
         print("Test mode enabled")
     elif sys.argv[1] == 'debugtest':

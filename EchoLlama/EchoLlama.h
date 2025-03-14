@@ -67,7 +67,7 @@ private slots:
      */
     void sendClicked();
 
-    void handleArchitectureChange();
+    void handleArchitectureChange(int index);
     void handleModelSelectionChange();
     void showModelInfo();
     void downloadModel();

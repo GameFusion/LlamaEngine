@@ -4,17 +4,17 @@ import shutil
 
 import sys
 
-REL_PATH = "build/Qt_6_7_0_for_macOS-Release/EchoLlama.app/Contents/MacOS/"
+REL_PATH = "build/Qt_6_7_0_for_macOS-Release/EchoLlama.app/Contents/Resources/"
 debug=False
 
 if len(sys.argv) > 1:
     if sys.argv[1] == 'debug':
         print("Debug mode is enabled")
-        REL_PATH = "build/Qt_6_7_0_for_macOS-Debug/EchoLlama.app/Contents/MacOS/"
+        REL_PATH = "build/Qt_6_7_0_for_macOS-Debug/EchoLlama.app/Contents/Resources/"
         debug = True
     elif sys.argv[1] == 'release':
         print("Release mode enabled")
-        REL_PATH = "build/Qt_6_7_0_for_macOS-Release/EchoLlama.app/Contents/MacOS/"
+        REL_PATH = "build/Qt_6_7_0_for_macOS-Release/EchoLlama.app/Contents/Resources/"
     elif sys.argv[1] == 'test':
         print("Test mode enabled")
     elif sys.argv[1] == 'debugtest':

@@ -25,6 +25,8 @@
 #include <QComboBox>
 #include <QAbstractItemView>
 
+#include "llama_version.h"
+
 bool systemPrompt=false;
 
 EchoLlama::EchoLlama(QWidget *parent)
@@ -246,25 +248,48 @@ void EchoLlama::setupConnections() {
 
 
 void EchoLlama::initializeLlama() {
-
-    qDebug() << "initializeLlama";
-    if(llamaClient)
+    if (llamaClient)
         return;
 
+    qDebug() << "initializeLlama";
+
+    // Define base relative path
+    const QString relativePath = "Resources/llama.cpp";
+
+    // Determine resource base path based on OS
+    QString resourceBasePath;
 #ifdef __APPLE__
-    const char* enginePath = "llama.cpp/gguf-v0.4.0-3352-g855cd073/metal/libLlamaEngine.1.dylib";
-#elif WIN32
-    const char* enginePath = "D:/GameFusion/Applications/LlamaEngine/build-EchoLlama-Desktop_Qt_5_15_0_MSVC2019_64bit-Debug/debug/llama.cpp/gguf-v0.4.0-3477-ga800ae46/cuda/LlamaEngined.dll";
+    resourceBasePath = QCoreApplication::applicationDirPath() + "/../" + relativePath;
+#elif __linux__
+    resourceBasePath = QCoreApplication::applicationDirPath() + "/../../" + relativePath;
 #else
-    const char* enginePath = "LlamaEngine.so";
+    resourceBasePath = QCoreApplication::applicationDirPath() + "/" + relativePath;
 #endif
+
+// Define library file names
+#ifdef __APPLE__
+    const QString libraryFileName = "libLlamaEngine.1.dylib";
+#elif defined(WIN32)
+    const QString libraryFileName = "LlamaEngine.dll";
+#else
+    const QString libraryFileName = "LlamaEngine.so";
+#endif
+
+    // Construct full resource path
+    const QString backendType = architectureComboBox->currentText().toLower();
+    const QString localResourcePath = QString("%1/%2/%3/%4")
+                                          .arg(resourceBasePath, LLAMA_COMMIT_VERSION, backendType, libraryFileName);
+
+    qDebug() << "localResourcePath:" << localResourcePath;
     qDebug() << "Binary path:" << QCoreApplication::applicationFilePath();
 
-    QString arch = architectureComboBox->currentText();
-    llamaClient = LlamaClient::Create(arch.toStdString(), enginePath);
+    // Create the Llama client
+    const QString arch = architectureComboBox->currentText();
+    llamaClient = LlamaClient::Create(arch.toStdString(), localResourcePath.toStdString());
+
     if (!llamaClient) {
         chatDisplay->append(LlamaClient::GetCreateError().c_str());
-        chatDisplay->append("Binary path:" + QCoreApplication::applicationFilePath()+"\n");
+        chatDisplay->append("Binary path: " + QCoreApplication::applicationFilePath() + "\n");
         return;
     }
 

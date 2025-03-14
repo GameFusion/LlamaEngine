@@ -8,8 +8,15 @@ This project is a module spin-off from [**StarGit**](https://stargit.com), now a
 
 ---
 
+## **EchoLlama Client**
+
 **EchoLlama*, the demo client for LlamaEngine, running on Windows:
-![EchoLlama Windows Screenshot](docs/images/echollama-windows-002.png)  
+![EchoLlama Windows Screenshot](docs/images/echollama-macos-v002.png)  
+
+EchoLlama is the demo client for **LlamaEngine**, showcasing how you can interact with **Llama models** in a native, cross-platform application. Running on **Windows**, EchoLlama provides an intuitive interface for chatting with AI models and integrating them into your development workflow.
+
+### **New Feature: Direct Model Downloads from Hugging Face**
+EchoLlama now includes the ability to **download curated models directly from Hugging Face**. With this feature, users can simply **press a "Download" button** to trigger the download of selected models, which will happen seamlessly in the background. This is done via a **background thread**, ensuring that the UI remains responsive while the model is being downloaded.
 
 ---
 
@@ -186,7 +193,7 @@ Here's a section for your `README.md`:
 
 ---
 
-## EchoLlama  
+## Compiling EchoLlama  
 
 EchoLlama is a Qt-based chat client for interacting with Llama models. It is located in the `EchoLlama` subdirectory and requires the compilation of **LlamaEngine** in the project root directory.  
 

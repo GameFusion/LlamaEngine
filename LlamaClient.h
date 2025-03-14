@@ -81,6 +81,10 @@ public:
      */
     bool loadModel(const std::string& modelName, struct ModelParameter* params, size_t paramCount, void (*callback)(const char*) = nullptr);
 
+    bool isModelLoaded();
+
+    std::string getModelFile();
+
     /**
      * @brief Generates a response based on a given prompt.Using default session
      * @param prompt The input text to process.
@@ -157,6 +161,10 @@ private:
 
     std::string backend; ///< Backend type (CPU, CUDA, Vulkan)
     std::string library; ///< Path to the dynamic library
+
+    bool modelLoaded = false; // Track if the model is successfully loaded
+    std::string modelPathFile; // Path file name for current model
+
 };
 
 #endif // LlamaClient_h

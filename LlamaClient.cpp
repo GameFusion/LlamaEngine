@@ -72,6 +72,7 @@ bool SetemLoadLibrary(const std::string& relativePath, LlamaClient** clientPtr, 
 LlamaClient::LlamaClient(const std::string &backendType, const std::string& dllPath) {
     backend = backendType;
     library = dllPath;
+    modelLoaded = false;
 
     LoadLibrary(dllPath);
 }
@@ -234,14 +235,16 @@ const std::string& LlamaClient::GetCreateError() {
 
 /**
  * @brief Loads the model.
- * @param backendType The type of backend used.
+ * @param Model path and file name.
  * @param params Model parameters.
  * @param paramCount Number of parameters.
  * @param callback Callback function.
  * @return True if successful, false otherwise.
  */
-bool LlamaClient::loadModel(const std::string& backendType, struct ModelParameter* params, size_t paramCount, void (*callback)(const char*)) {
-    return loadModelFunc(backendType.c_str(), params, paramCount, callback);
+bool LlamaClient::loadModel(const std::string& modelFile, struct ModelParameter* params, size_t paramCount, void (*callback)(const char*)) {
+    modelLoaded = loadModelFunc(modelFile.c_str(), params, paramCount, callback);
+    modelPathFile = modelFile;
+    return modelLoaded;
 }
 
 /**
@@ -367,4 +370,14 @@ std::string LlamaClient::getContextInfo(){
     }, &result);
 
     return result;
+}
+
+
+
+bool LlamaClient::isModelLoaded() {
+    return modelLoaded;
+}
+
+std::string LlamaClient::getModelFile() {
+    return modelPathFile;
 }

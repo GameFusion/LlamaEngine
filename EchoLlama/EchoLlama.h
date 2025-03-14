@@ -2,13 +2,16 @@
 #define EchoLlama_h
 
 #include <QWidget>
+#include <QJsonArray>
 
 class LlamaClient;
 class QTextEdit;
 class QPlainTextEdit;
 class QToolButton;
 class QComboBox;
+class QProgressBar;
 
+class DownloadManager;
 /**
  * @file EchoLlama.h
  * @brief Defines the EchoLlama class for interacting with the LlamaEngine.
@@ -70,6 +73,9 @@ private slots:
     void downloadModel();
     void showSettings();
 
+    void updateDownloadProgress(const QString &url, qint64 starOffset, qint64 bytesReceived, qint64 bytesTotal);
+    void onDownloadFinished(const QString &url);
+
 private:
     /**
      * @brief Text edit widget for displaying chat messages.
@@ -101,6 +107,7 @@ private:
     QToolButton *modelInfoButton;
     QToolButton *downloadButton;
     QToolButton *settingsButton;
+    QProgressBar *progressBar;
 
     void loadCuratedModels();
 
@@ -130,6 +137,12 @@ private:
      * @brief Applies styles to UI components (chatDisplay, inputGroup, promptInput, sendButton).
      */
     void applyStyles();
+
+    QJsonArray modelsArray;
+    DownloadManager *downloadManager;
+    QJsonObject getSelectedModelObject();
+
+    void updateProgress(qint64 starOffset, qint64 bytesReceived, qint64 totalBytes);
 };
 
 #endif // EchoLlama_h

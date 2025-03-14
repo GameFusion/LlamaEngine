@@ -2,5 +2,6 @@
 <RCC version="1.0">
     <qresource prefix="/">
         <file>Resources/fonts/fa-solid-900.ttf</file>
+	<file>Resources/models.json</file>
     </qresource>
 </RCC>

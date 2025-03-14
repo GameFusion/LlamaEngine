@@ -1,6 +1,8 @@
 #include "EchoLlama.h"
 
 #include "LlamaClient.h"
+#include "FontAwesome.h"
+#include "DownloadManager.h"
 
 #include <QVBoxLayout>
 #include <QTextEdit>
@@ -13,11 +15,20 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QMessageBox>
+#include <QProgressBar>
+#include <QStandardPaths>
+#include <QModelIndex>
+#include <QDir>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QComboBox>
+#include <QAbstractItemView>
 
-#include "FontAwesome.h"
+bool systemPrompt=false;
 
 EchoLlama::EchoLlama(QWidget *parent)
-    : QWidget(parent), chatDisplay(new QTextEdit(this)), promptInput(new QPlainTextEdit(this)), sendButton(new QToolButton(this)) {
+    : QWidget(parent), chatDisplay(new QTextEdit(this)), promptInput(new QPlainTextEdit(this)), sendButton(new QToolButton(this)){
 
     // Initialize UI components
     setupUI();
@@ -32,6 +43,10 @@ EchoLlama::EchoLlama(QWidget *parent)
     connect(promptInput, &QPlainTextEdit::textChanged, this, &EchoLlama::handleTextChange);
     connect(sendButton, &QToolButton::clicked, this, &EchoLlama::sendClicked);
 
+    downloadManager = new DownloadManager(this);
+    connect(downloadManager, &DownloadManager::progressUpdated, this, &EchoLlama::updateDownloadProgress);
+    connect(downloadManager, &DownloadManager::downloadFinished, this, &EchoLlama::onDownloadFinished);
+
     // Initialize Llama after a short delay
     QTimer::singleShot(200, this, &EchoLlama::initializeLlama);
 }
@@ -40,14 +55,10 @@ EchoLlama::~EchoLlama() {
     delete llamaClient;
 }
 
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
-#include <QComboBox>
-
 void EchoLlama::loadCuratedModels() {
 
-    QString modelsFilePath = "/Users/andreascarlen/GameFusion/Applications/LlamaEngine/EchoLlama/Resources/models.json";
+    QString modelsFilePath = ":/resources/models.json";
+
     QFile file(modelsFilePath);
     if (!file.exists()) {
         qDebug() << "File not found!";
@@ -62,30 +73,22 @@ void EchoLlama::loadCuratedModels() {
     QByteArray data = file.readAll();
     file.close();
 
-    //QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
-
     // Create a QJsonParseError to capture any errors during parsing
     QJsonParseError parseError;
     QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
-
     if (doc.isNull() || !doc.isArray()) {
         qDebug() << "Error parsing JSON at line" << parseError.errorString();
-
         return;
     }
 
-    //QJsonObject jsonObject = doc.array();
-    QJsonArray modelsArray = doc.array();
-
     // Populate model selection dropdown
+    modelsArray = doc.array();
     for (int i = 0; i < modelsArray.size(); ++i) {
         QJsonObject modelObject = modelsArray[i].toObject();
         QString modelName = modelObject["name"].toString();
         modelSelectionComboBox->addItem(modelName);
     }
 }
-
-#include <QAbstractItemView>
 
 void EchoLlama::setupUI() {
 
@@ -136,10 +139,13 @@ void EchoLlama::setupUI() {
     topBarLayout->addWidget(settingsButton);
     topBarLayout->addWidget(modelInfoButton);
 
-    architectureComboBox->addItem("CPU");
+#ifdef __APPLE__
+    architectureComboBox->addItem("Metal");
+#else
     architectureComboBox->addItem("CUDA");
     architectureComboBox->addItem("Vulkan");
-    architectureComboBox->addItem("Metal");
+    architectureComboBox->addItem("CPU");
+#endif
 
     // Set the size policy to allow shrinking
     architectureComboBox->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
@@ -147,6 +153,7 @@ void EchoLlama::setupUI() {
     // Adjust the combo box width based on the content
     architectureComboBox->setMaximumWidth(architectureComboBox->view()->sizeHintForColumn(0) + 30);  // Add padding if needed
 
+    progressBar = new QProgressBar(this);
     //////////////////////////
     //
     // Setup the chat area
@@ -167,9 +174,6 @@ void EchoLlama::setupUI() {
     //chatDisplay->setCurrentCharFormat()
     promptInput->setFixedHeight(46);
     promptInput->setMinimumHeight(46);
-
-
-
 
     // Set placeholder text for promptInput
     promptInput->setPlaceholderText("Ask Anything");
@@ -192,15 +196,16 @@ void EchoLlama::setupUI() {
     QVBoxLayout* layout = new QVBoxLayout(this);
     layout->setContentsMargins(20, 0, 20, 20);
     layout->addLayout(topBarLayout);
+    layout->addWidget(progressBar);
     layout->addWidget(chatDisplay);
     layout->addWidget(inputGroup);
-
-
 }
 
-
-
 void EchoLlama::initializeLlama() {
+
+    if(llamaClient)
+        return;
+
 #ifdef __APPLE__
     const char* enginePath = "llama.cpp/gguf-v0.4.0-3352-g855cd073/metal/libLlamaEngine.1.dylib";
 #elif WIN32
@@ -209,9 +214,9 @@ void EchoLlama::initializeLlama() {
     const char* enginePath = "LlamaEngine.so";
 #endif
     qDebug() << "Binary path:" << QCoreApplication::applicationFilePath();
-    //chatDisplay->append("Binary path:" + QCoreApplication::applicationFilePath()+"\n");
 
-    llamaClient = LlamaClient::Create("CUDA", enginePath);
+    QString arch = architectureComboBox->currentText();
+    llamaClient = LlamaClient::Create(arch.toStdString(), enginePath);
     if (!llamaClient) {
         chatDisplay->append(LlamaClient::GetCreateError().c_str());
         chatDisplay->append("Binary path:" + QCoreApplication::applicationFilePath()+"\n");
@@ -221,13 +226,63 @@ void EchoLlama::initializeLlama() {
     loadLlama();
 }
 
+QJsonObject EchoLlama::getSelectedModelObject() {
+    int index = modelSelectionComboBox->currentIndex();
+    if (index >= modelsArray.count()) {
+        qDebug() << "Model index out of bounds";
+        return QJsonObject();
+    }
+
+    QJsonObject modelObject = modelsArray[index].toObject();
+    if (!modelObject.contains("download_link")) {
+        qDebug() << "Model missing download_link";
+        return QJsonObject();
+    }
+
+    if (!modelObject.contains("byte_length")) {
+        qDebug() << "Model missing byte_length";
+        return QJsonObject();
+    }
+
+    return modelObject;
+}
+
 bool EchoLlama::loadLlama() {
     QString homeDir = QDir::homePath();
-#ifdef __APPLE__
-    QString modelPath = homeDir + "/.cache/EchoLlama/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf";
-#elif WIN32
-    QString modelPath = "D:/llm-studio-models/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF/qwen2.5-coder-3b-instruct-q4_k_m.gguf";
-#endif
+
+    QJsonObject modelObject = getSelectedModelObject();
+
+    if(modelObject.isEmpty())
+        return false;
+
+    QString downloadLink = modelObject["download_link"].toString();
+
+    if(llamaClient && llamaClient->getModelFile() == downloadLink.toStdString())
+        return true; // model already loaded
+
+    QString downloadFile = QUrl(downloadLink).fileName();
+    QString modelPath = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.cache/EchoLlama/models";
+    QString modelPathFile = QString("%1/%2").arg(modelPath).arg(downloadFile);
+
+    QFile *file = new QFile(modelPathFile, this);
+
+    if(file->exists()){
+        qint64 bytesTotal = modelObject["byte_length"].toInteger();
+        qint64 fileSize = file->size();
+        if(fileSize != bytesTotal){
+            // download incomplete
+
+            if(!llamaClient->isModelLoaded())
+                chatDisplay->append("Press the donwload to resume pulling this model for use\n");
+            qDebug() << "Download incomplete: " << modelPathFile;
+            return false;
+        }
+    }else{
+        qDebug() << "Model not downloaded: " << modelPathFile;
+        if(!llamaClient->isModelLoaded())
+            chatDisplay->append("Press the donwload icon to use this model\n");
+    }
+
     int contextSize = 4096;
     float temperature = 0.7f;
     float topK = 40;
@@ -243,14 +298,15 @@ bool EchoLlama::loadLlama() {
     };
 
     size_t paramCount = sizeof(params) / sizeof(params[0]);
-    bool success = llamaClient->loadModel(modelPath.toUtf8().constData(), params, paramCount);
+    bool success = llamaClient->loadModel(modelPathFile.toUtf8().constData(), params, paramCount);
     if (!success) {
-        chatDisplay->append("Failed to open model file: \n"+modelPath+"\n");
+        chatDisplay->append("Failed to open model file: \n"+modelPathFile+"\n");
         return false;
     }
 
     qDebug() << "Model loaded successfully.";
 
+    systemPrompt = true;
     generateResponse("Hello!");
     promptInput->setFocus();
 
@@ -352,6 +408,16 @@ void EchoLlama::generateResponse(const QString& prompt) {
 
 void EchoLlama::finishedCallback(const char* msg, void* userData) {
     // Optional: Handle any cleanup after response is finished
+    if(systemPrompt){
+        // system promps are generated directly without a user question directly by calling generateResponse vs processPromt
+        // we need to add a new line
+        QTextCursor cursor = chatDisplay->textCursor();
+        cursor.movePosition(QTextCursor::End);
+        cursor.insertBlock(); // insert new block for the prompt
+
+        // pop system prompt status
+        systemPrompt = false;
+    }
 }
 
 void EchoLlama::handleTextChange() {
@@ -553,21 +619,69 @@ void EchoLlama::applyStyles() {
 
 void EchoLlama::handleArchitectureChange() {
     QString selectedArch = architectureComboBox->currentText();
+
+    // prototype
     // Update the LlamaClient with the selected architecture
     //llamaClient.setArchitecture(selectedArch);
 }
 
 void EchoLlama::handleModelSelectionChange() {
+
     QString selectedModel = modelSelectionComboBox->currentText();
-    // Load and configure the selected model
-    //llamaClient.loadModel(selectedModel);
 
-    // TODO
-    // check if model exists and has been downloaded
-    // model file should be in <home>./cache/EchoLlamma/<selectedModel>
-    // if model file exists hide the download button
-    // if model does not exist show download button
+    QJsonObject modelObject = getSelectedModelObject();
 
+    if (modelObject.isEmpty()) {
+        return;
+    }
+
+    QString downloadLink = modelObject["download_link"].toString();
+    if (downloadManager->isActive(downloadLink)){
+        //chatDisplay->append("Model download in progress");
+        return;
+    }
+
+    QString downloadFile = QUrl(downloadLink).fileName();
+    QString modelPath = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.cache/EchoLlama/models";
+    QString downloadFilePath = QString("%1/%2").arg(modelPath).arg(downloadFile);
+    QFile *file = new QFile(downloadFilePath, this);
+
+    qint64 bytesTotal = modelObject["byte_length"].toInteger();
+    qint64 bytesDownloaded = 0;
+
+    if(file->exists()){
+        bytesDownloaded = file->size();
+
+        if(bytesDownloaded < bytesTotal){
+            //if(!llamaClient || !llamaClient->isModelLoaded())
+            //    chatDisplay->append("Press the donwload icon to resume pull for this model");
+            progressBar->show();
+            updateProgress(bytesDownloaded, 0, bytesTotal);
+        }else{
+            progressBar->hide();
+            updateProgress(0, bytesDownloaded, bytesDownloaded);
+            if(llamaClient && !llamaClient->isModelLoaded())
+                loadLlama();
+            else{
+
+                if(llamaClient && llamaClient->isModelLoaded() && llamaClient->getModelFile() != downloadFilePath.toStdString()){
+                    delete llamaClient;
+                    llamaClient = nullptr;
+                    initializeLlama();
+                }
+            }
+        }
+    }
+    else{
+        //if(llamaClient && !llamaClient->isModelLoaded())
+        //    chatDisplay->append("Press the donwload icon to get this model");
+        updateProgress(0, 0, bytesTotal);
+        progressBar->show();
+    }
+
+    // Prototype
+    // Download the selected model
+    //llamaClient.downloadModel(selectedModel);
 }
 
 void EchoLlama::showModelInfo() {
@@ -576,13 +690,88 @@ void EchoLlama::showModelInfo() {
 
 void EchoLlama::downloadModel() {
     QString selectedModel = modelSelectionComboBox->currentText();
-    // Download the selected model
-    //llamaClient.downloadModel(selectedModel);
     qDebug() << "Model selected: " << selectedModel;
+
+    QJsonObject modelObject = getSelectedModelObject();
+    if (modelObject.isEmpty()) {
+        return;
+    }
+
+    QString downloadLink = modelObject["download_link"].toString();
+    QString downloadFile = QUrl(downloadLink).fileName();
+    QString modelPath = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.cache/EchoLlama/models";
+
+    QDir dir(modelPath);
+    if (!dir.exists())
+        dir.mkpath(modelPath);
+    QString downloadFilePath = QString("%1/%2").arg(modelPath).arg(downloadFile);
+    QFile *file = new QFile(downloadFilePath, this);
+
+    if (!file->open(QIODevice::Append)) {
+        qWarning() << "Failed to open file for writing";
+        return;
+    }
+
+    downloadManager->downloadFile(downloadLink, file);
+    qDebug() << "Downloading Model "<< downloadLink << " to " << downloadFilePath;
 }
 
 void EchoLlama::showSettings() {
     QMessageBox::information(this, "Settings", "Configuration options for the LlamaEngine.");
 }
 
+void EchoLlama::updateProgress(qint64 starOffset, qint64 bytesReceived, qint64 totalBytes){
+    // Calculate the percentage received
+    int percentReceived = static_cast<int>((bytesReceived+starOffset) * 100 / (totalBytes+starOffset));
+    progressBar->setValue(percentReceived);
+}
 
+void EchoLlama::updateDownloadProgress(const QString &url, qint64 starOffset, qint64 bytesReceived, qint64 totalBytes)
+{
+    QJsonObject modelObject = getSelectedModelObject();
+    if (modelObject.isEmpty()) {
+        return;
+    }
+
+    QString downloadLink = modelObject["download_link"].toString();
+
+    if(downloadLink == url && totalBytes != 0)
+    {
+        updateProgress(starOffset, bytesReceived, totalBytes);
+
+    }
+}
+
+void EchoLlama::onDownloadFinished(const QString &url)
+{
+    qDebug() << "Download complete";
+
+    if (!llamaClient->isModelLoaded()) {
+        //chatDisplay->append("Model download complete, loading llama...\n");
+        QGuiApplication::processEvents();
+        loadLlama();
+    } else {
+        QJsonObject modelObject = getSelectedModelObject();
+        if (modelObject.isEmpty())
+            return;
+
+        QMessageBox::StandardButton reply;
+        reply = QMessageBox::question(this, "Model Downloaded",
+                                      "Model download complete. Switch to the new model?",
+                                      QMessageBox::Yes | QMessageBox::No);
+
+        if (reply == QMessageBox::Yes) {
+            // get json model for selecteed model
+            for (const QJsonValue &modelValue : modelsArray) {
+
+                QJsonObject modelObject = modelValue.toObject();
+                QString downloadLink = modelObject["download_link"].toString();
+                if(downloadLink == url){
+                    QString modelName = modelObject.value("name").toString();
+                    modelSelectionComboBox->setCurrentText(modelName);
+                }
+
+            }
+        }
+    }
+}

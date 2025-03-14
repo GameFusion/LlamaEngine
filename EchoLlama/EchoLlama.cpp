@@ -30,23 +30,25 @@ bool systemPrompt=false;
 EchoLlama::EchoLlama(QWidget *parent)
     : QWidget(parent), chatDisplay(new QTextEdit(this)), promptInput(new QPlainTextEdit(this)), sendButton(new QToolButton(this)){
 
+    downloadManager = nullptr;
+    llamaClient = nullptr;
+
     // Initialize UI components
     setupUI();
+
+
 
     // Apply the styles
     applyStyles();
 
+
     // Load curated models from JSON config file
     loadCuratedModels();
-
-    // Connect signals to slots
-    connect(promptInput, &QPlainTextEdit::textChanged, this, &EchoLlama::handleTextChange);
-    connect(sendButton, &QToolButton::clicked, this, &EchoLlama::sendClicked);
+    //return;
 
     downloadManager = new DownloadManager(this);
-    connect(downloadManager, &DownloadManager::progressUpdated, this, &EchoLlama::updateDownloadProgress);
-    connect(downloadManager, &DownloadManager::downloadFinished, this, &EchoLlama::onDownloadFinished);
 
+    setupConnections();
     // Initialize Llama after a short delay
     QTimer::singleShot(200, this, &EchoLlama::initializeLlama);
 }
@@ -56,8 +58,9 @@ EchoLlama::~EchoLlama() {
 }
 
 void EchoLlama::loadCuratedModels() {
+    qDebug() << "loadCuratedModels (1)!";
 
-    QString modelsFilePath = ":/resources/models.json";
+    QString modelsFilePath = ":/Resources/models.json";
 
     QFile file(modelsFilePath);
     if (!file.exists()) {
@@ -70,8 +73,13 @@ void EchoLlama::loadCuratedModels() {
         return;
     }
 
+    qDebug() << "loadCuratedModels (2) models.json loaded!";
+
     QByteArray data = file.readAll();
     file.close();
+
+    qDebug() << "loadCuratedModels (3) models.json read all!";
+
 
     // Create a QJsonParseError to capture any errors during parsing
     QJsonParseError parseError;
@@ -81,13 +89,29 @@ void EchoLlama::loadCuratedModels() {
         return;
     }
 
+    qDebug() << "loadCuratedModels (4) models.json to json doc";
+
+
     // Populate model selection dropdown
     modelsArray = doc.array();
+    qDebug() << "loadCuratedModels (5) models.json to json array";
+
     for (int i = 0; i < modelsArray.size(); ++i) {
         QJsonObject modelObject = modelsArray[i].toObject();
         QString modelName = modelObject["name"].toString();
+
+        if (!modelObject.contains("name") || !modelObject["name"].isString()) {
+            qDebug() << "Error: Invalid model entry in JSON!";
+            continue;
+        }
+
+        qDebug() << "loadCuratedModels (6) models.json found model " << modelName;
+
         modelSelectionComboBox->addItem(modelName);
     }
+
+    qDebug() << "loadCuratedModels done";
+    return;
 }
 
 void EchoLlama::setupUI() {
@@ -102,32 +126,27 @@ void EchoLlama::setupUI() {
 
     // Architecture selection dropdown
     architectureComboBox = new QComboBox(this);
-    connect(architectureComboBox, &QComboBox::currentIndexChanged, this, &EchoLlama::handleArchitectureChange);
 
     // Model information icon button
     modelInfoButton = new QToolButton(this);
     modelInfoButton->setFont(fa);
     modelInfoButton->setText(QChar(0xf05a));  // Information icon
     modelInfoButton->setToolTip("Model Information");
-    connect(modelInfoButton, &QToolButton::clicked, this, &EchoLlama::showModelInfo);
 
     // Download icon button
     downloadButton = new QToolButton(this);
     downloadButton->setFont(fa);
     downloadButton->setText(QChar(0xf019));  // Download icon
     downloadButton->setToolTip("Download Model from Huging Faces");
-    connect(downloadButton, &QToolButton::clicked, this, &EchoLlama::downloadModel);
 
     // Settings icon button
     settingsButton = new QToolButton(this);
     settingsButton->setFont(fa);
     settingsButton->setText(QChar(0xf013));  // Settings icon
     settingsButton->setToolTip("Model Settings");
-    connect(settingsButton, &QToolButton::clicked, this, &EchoLlama::showSettings);
 
     // Model selection dropdown
     modelSelectionComboBox = new QComboBox(this);
-    connect(modelSelectionComboBox, &QComboBox::currentIndexChanged, this, &EchoLlama::handleModelSelectionChange);
 
     // Top bar layout
     QHBoxLayout* topBarLayout = new QHBoxLayout();
@@ -201,8 +220,34 @@ void EchoLlama::setupUI() {
     layout->addWidget(inputGroup);
 }
 
+void EchoLlama::setupConnections() {
+
+    // Architecture selection dropdown connect
+    connect(architectureComboBox, &QComboBox::currentIndexChanged, this, &EchoLlama::handleArchitectureChange);
+
+    // Model information icon button
+    connect(modelInfoButton, &QToolButton::clicked, this, &EchoLlama::showModelInfo);
+
+    // Download icon button
+    connect(downloadButton, &QToolButton::clicked, this, &EchoLlama::downloadModel);
+
+    // Settings icon button
+    connect(settingsButton, &QToolButton::clicked, this, &EchoLlama::showSettings);
+
+    // Connect signals to slots
+    connect(promptInput, &QPlainTextEdit::textChanged, this, &EchoLlama::handleTextChange);
+    connect(sendButton, &QToolButton::clicked, this, &EchoLlama::sendClicked);
+
+    connect(downloadManager, &DownloadManager::progressUpdated, this, &EchoLlama::updateDownloadProgress);
+    connect(downloadManager, &DownloadManager::downloadFinished, this, &EchoLlama::onDownloadFinished);
+
+    connect(modelSelectionComboBox, &QComboBox::currentIndexChanged, this, &EchoLlama::handleModelSelectionChange);
+}
+
+
 void EchoLlama::initializeLlama() {
 
+    qDebug() << "initializeLlama";
     if(llamaClient)
         return;
 
@@ -228,6 +273,12 @@ void EchoLlama::initializeLlama() {
 
 QJsonObject EchoLlama::getSelectedModelObject() {
     int index = modelSelectionComboBox->currentIndex();
+
+    if(index < 0){
+        qDebug() << "No model found";
+        return QJsonObject();
+    }
+
     if (index >= modelsArray.count()) {
         qDebug() << "Model index out of bounds";
         return QJsonObject();
@@ -248,10 +299,14 @@ QJsonObject EchoLlama::getSelectedModelObject() {
 }
 
 bool EchoLlama::loadLlama() {
-    QString homeDir = QDir::homePath();
+    qDebug() << "loadLlama (1)";
+
+    if(!llamaClient) {
+        qDebug() << "loadLlama (2B) llama client is null";
+        return false;
+    }
 
     QJsonObject modelObject = getSelectedModelObject();
-
     if(modelObject.isEmpty())
         return false;
 
@@ -260,18 +315,29 @@ bool EchoLlama::loadLlama() {
     if(llamaClient && llamaClient->getModelFile() == downloadLink.toStdString())
         return true; // model already loaded
 
+    QString homeDir = QDir::homePath();
     QString downloadFile = QUrl(downloadLink).fileName();
     QString modelPath = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.cache/EchoLlama/models";
     QString modelPathFile = QString("%1/%2").arg(modelPath).arg(downloadFile);
-
     QFile *file = new QFile(modelPathFile, this);
 
+    qDebug() << "loadLlama (3) processing file" <<modelPathFile;
+
     if(file->exists()){
+
+        qDebug() << "Model exists: " << modelPathFile;
+        if(!modelObject.contains("byte_length")) {
+            qDebug() << "loadLlama (5) missing bute_length in model attributes" <<modelPathFile;
+            return false;
+        }
+
         qint64 bytesTotal = modelObject["byte_length"].toInteger();
         qint64 fileSize = file->size();
+
         if(fileSize != bytesTotal){
             // download incomplete
-
+            // here we display a message in the chat only
+            // if a model is not already loaded
             if(!llamaClient->isModelLoaded())
                 chatDisplay->append("Press the donwload to resume pulling this model for use\n");
             qDebug() << "Download incomplete: " << modelPathFile;
@@ -282,6 +348,8 @@ bool EchoLlama::loadLlama() {
         if(!llamaClient->isModelLoaded())
             chatDisplay->append("Press the donwload icon to use this model\n");
     }
+
+    qDebug() << "loadLlama (7) setup model parameters: ";
 
     int contextSize = 4096;
     float temperature = 0.7f;
@@ -298,13 +366,13 @@ bool EchoLlama::loadLlama() {
     };
 
     size_t paramCount = sizeof(params) / sizeof(params[0]);
+
     bool success = llamaClient->loadModel(modelPathFile.toUtf8().constData(), params, paramCount);
     if (!success) {
+        qDebug() << "loadLlama Failed to open model file: "<<modelPathFile;
         chatDisplay->append("Failed to open model file: \n"+modelPathFile+"\n");
         return false;
     }
-
-    qDebug() << "Model loaded successfully.";
 
     systemPrompt = true;
     generateResponse("Hello!");
@@ -636,7 +704,7 @@ void EchoLlama::handleModelSelectionChange() {
     }
 
     QString downloadLink = modelObject["download_link"].toString();
-    if (downloadManager->isActive(downloadLink)){
+    if (downloadManager && downloadManager->isActive(downloadLink)){
         //chatDisplay->append("Model download in progress");
         return;
     }
@@ -712,7 +780,8 @@ void EchoLlama::downloadModel() {
         return;
     }
 
-    downloadManager->downloadFile(downloadLink, file);
+    if(downloadManager)
+        downloadManager->downloadFile(downloadLink, file);
     qDebug() << "Downloading Model "<< downloadLink << " to " << downloadFilePath;
 }
 

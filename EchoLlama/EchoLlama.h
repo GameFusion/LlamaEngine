@@ -113,6 +113,8 @@ private:
 
     void setupUI();
 
+    void setupConnections();
+
     /**
      * @brief Callback function to handle incoming response messages.
      * @param msg The message content.

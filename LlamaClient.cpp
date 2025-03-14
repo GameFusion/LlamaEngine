@@ -242,6 +242,11 @@ const std::string& LlamaClient::GetCreateError() {
  * @return True if successful, false otherwise.
  */
 bool LlamaClient::loadModel(const std::string& modelFile, struct ModelParameter* params, size_t paramCount, void (*callback)(const char*)) {
+
+    if (!loadModelFunc) {
+        return false;
+    }
+
     modelLoaded = loadModelFunc(modelFile.c_str(), params, paramCount, callback);
     modelPathFile = modelFile;
     return modelLoaded;

@@ -96,6 +96,36 @@ LlamaEngine_API bool loadModel(const char* modelPath,
 }
 
 /**
+ * @brief Creates a new session and returns a session UUID.
+ *
+ * @return A dynamically allocated UUID string. Caller must free the memory.
+ */
+LlamaEngine_API bool createSession(int sessionId) {
+    return runtimeContext->createSession(sessionId);
+}
+
+/**
+ * @brief Clears the context history for a specific session.
+ *
+ * @param sessionUuid The UUID of the session to clear.
+ * @return True if successful, false if session does not exist.
+ */
+LlamaEngine_API bool clearSession(int sessionId) {
+    return runtimeContext->clearSession(sessionId);
+}
+
+/**
+ * @brief Deletes a session and frees associated resources.
+ *
+ * @param sessionUuid The UUID of the session to delete.
+ * @return True if the session was successfully deleted, false otherwise.
+ */
+LlamaEngine_API bool deleteSession(int sessionId) {
+    return runtimeContext->deleteSession(sessionId);
+}
+
+
+/**
  * @brief Generates a response for the specified session using the given prompt.
  *
  * This function retrieves the session identified by `sessionID` and uses
@@ -125,7 +155,7 @@ LlamaEngine_API bool generateResponse(int sessionID,
     }
     bool ret = runtimeContext->generateResponse(sessionID, prompt, streamCallback, userData);
     if(ret && finalCallback)
-        finalCallback(runtimeContext->getResponse().c_str(), userData);
+        finalCallback(runtimeContext->getResponse(sessionID).c_str(), userData);
 
     return ret;
 }
@@ -135,7 +165,8 @@ LlamaEngine_API bool generateResponse(int sessionID,
  * @return Returns the complete latest generated response.
  */
 LlamaEngine_API const char* getLastResponse() {
-    return runtimeContext->getResponse().c_str();
+    const int defaultSession = 0;
+    return runtimeContext->getResponse(defaultSession).c_str();
 }
 
 LlamaEngine_API void getContextInfo(void (*callback)(const char*info, void*userData), void* userData){

@@ -156,6 +156,10 @@ void LlamaClient::LoadLibrary(const std::string& dllPath)
         parseGGUFFunc = (ParseGGUFFunc)GetProcAddress(hDll, "parseGGUF");
         getContextInfoFunc = (GetContextInfoFunc)GetProcAddress(hDll, "getContextInfo");
 
+        createSessionFunc = (CreateSessionFunc)GetProcAddress(hDll, "createSession");
+        clearSessionFunc = (ClearSessionFunc)GetProcAddress(hDll, "clearSession");
+        deleteSessionFunc = (DeleteSessionFunc)GetProcAddress(hDll, "deleteSession");
+
         if (!loadModelFunc || !generateResponseFunc || !parseGGUFFunc || !getContextInfoFunc) {
             FreeLibrary(hDll);
             throw std::runtime_error("Failed to locate functions in LlamaEngine.dll!");
@@ -182,6 +186,10 @@ void LlamaClient::LoadLibrary(const std::string& dllPath)
     generateResponseFunc = (GenerateResponseFunc)dlsym(hDll, "generateResponse");
     parseGGUFFunc = (ParseGGUFFunc)dlsym(hDll, "parseGGUF");
     getContextInfoFunc = (GetContextInfoFunc)dlsym(hDll, "getContextInfo");
+
+    createSessionFunc = (CreateSessionFunc)dlsym(hDll, "createSession");
+    clearSessionFunc = (ClearSessionFunc)dlsym(hDll, "clearSession");
+    deleteSessionFunc = (DeleteSessionFunc)dlsym(hDll, "deleteSession");
 
     if (!loadModelFunc || !generateResponseFunc || !parseGGUFFunc || !getContextInfoFunc) {
         const char* errorMsg = dlerror();
@@ -385,4 +393,16 @@ bool LlamaClient::isModelLoaded() {
 
 std::string LlamaClient::getModelFile() {
     return modelPathFile;
+}
+
+bool LlamaClient::createSession(int sessionId) {
+    return createSessionFunc(sessionId);
+}
+
+bool LlamaClient::clearSession(int sessionId) {
+    return clearSessionFunc(sessionId);
+}
+
+bool LlamaClient::deleteSession(int sessionId) {
+    return deleteSessionFunc(sessionId);
 }

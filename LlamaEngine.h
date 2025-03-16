@@ -75,6 +75,29 @@ LlamaEngine_API bool loadModel(const char* backendType,
                                void (*callback)(const char*) = nullptr);
 
 /**
+ * @brief Creates a new session and returns a session UUID.
+ *
+ * @return A dynamically allocated UUID string. Caller must free the memory.
+ */
+LlamaEngine_API bool createSession(int sessionId);
+
+/**
+ * @brief Clears the context history for a specific session.
+ *
+ * @param sessionUuid The UUID of the session to clear.
+ * @return True if successful, false if session does not exist.
+ */
+LlamaEngine_API bool clearSession(int sessionId);
+
+/**
+ * @brief Deletes a session and frees associated resources.
+ *
+ * @param sessionUuid The UUID of the session to delete.
+ * @return True if the session was successfully deleted, false otherwise.
+ */
+LlamaEngine_API bool deleteSession(int sessionId);
+
+/**
  * @brief Generates a response from the model for a given session and prompt.
  *
  * This function retrieves the session identified by `sessionId`, ensuring that

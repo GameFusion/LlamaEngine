@@ -19,11 +19,71 @@ LlamaRuntime::~LlamaRuntime() {
         llama_model_free(model);
         model = nullptr;
     }
-
+/*
     // Free allocated message content
     for (auto &msg : messages) {
         free(const_cast<char *>(msg.content));
     }
+*/
+    for (auto& [sessionId, session] : sessions) {
+        delete session;
+    }
+    sessions.clear();
+}
+
+bool LlamaRuntime::createSession(int session_id) {
+    if (sessions.find(session_id) != sessions.end()) {
+        logError("Session already exists: " + std::to_string(session_id));
+        return false;
+    }
+
+    llama_context_params ctx_params = llama_context_default_params();
+    ctx_params.n_ctx = context_size;
+    ctx_params.n_batch = context_size;
+
+    LlamaSession* new_session = new LlamaSession(std::to_string(session_id), nullptr, nullptr);
+    new_session->ctx = llama_new_context_with_model(model, ctx_params);
+
+    if (!new_session->ctx) {
+        logError("Failed to create context for session " + std::to_string(session_id));
+        delete new_session;
+        return false;
+    }
+
+    new_session->smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
+    llama_sampler_chain_add(new_session->smpl, llama_sampler_init_min_p(0.05f, 1));
+    llama_sampler_chain_add(new_session->smpl, llama_sampler_init_temp(temperature));
+    llama_sampler_chain_add(new_session->smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+
+    sessions[session_id] = new_session;
+    logInfo("Created session: " + std::to_string(session_id));
+    return true;
+}
+
+bool LlamaRuntime::clearSession(int session_id) {
+    auto it = sessions.find(session_id);
+    if (it == sessions.end()) {
+        logError("Session not found: " + std::to_string(session_id));
+        return false;
+    }
+
+    it->second->clearSampler();
+    it->second->clearContext();
+    logInfo("Cleared session: " + std::to_string(session_id));
+    return true;
+}
+
+bool LlamaRuntime::deleteSession(int session_id) {
+    auto it = sessions.find(session_id);
+    if (it == sessions.end()) {
+        logError("Session not found: " + std::to_string(session_id));
+        return false;
+    }
+
+    delete it->second;
+    sessions.erase(it);
+    logInfo("Deleted session: " + std::to_string(session_id));
+    return true;
 }
 
 // Public method to load the model with default parameters
@@ -103,10 +163,10 @@ bool LlamaRuntime::loadModelInternal(const std::string &modelPath, int ngl, int 
         llama_sampler_chain_add(session->smpl, llama_sampler_init_min_p(0.05f, 1));
         llama_sampler_chain_add(session->smpl, llama_sampler_init_temp(temperature));
         llama_sampler_chain_add(session->smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
-    }
 
-    // Resize formatted buffer for context size
-    formatted.resize(n_ctx);
+        // Resize formatted buffer for context size
+        /*session->formatted.resize(n_ctx);*/
+    }
 
     return true;
 }
@@ -226,15 +286,15 @@ bool LlamaRuntime::generateResponse(int session_id, const std::string &input_pro
     logDebug("KV Cache used: " + std::to_string(n_ctx_used) + "\n");
 
     // Log current chat history size
-    logDebug("Messages in history: " + std::to_string(messages.size())+ "\n");
+    logDebug("Messages in history: " + std::to_string(session->messages.size())+ "\n");
 
     // add the user input to the message list and format it
-    messages.push_back({"user", strdup(input_prompt.c_str())});
+    session->messages.push_back({"user", strdup(input_prompt.c_str())});
 
-    int new_len = llama_chat_apply_template(llama_model_chat_template(model, nullptr), messages.data(), messages.size(), true, formatted.data(), formatted.size());
-    if (new_len > formatted.size()) {
-        formatted.resize(new_len);
-        new_len = llama_chat_apply_template(llama_model_chat_template(model, nullptr), messages.data(), messages.size(), true, formatted.data(), formatted.size());
+    int new_len = llama_chat_apply_template(llama_model_chat_template(model, nullptr), session->messages.data(), session->messages.size(), true, session->formatted.data(), session->formatted.size());
+    if (new_len > session->formatted.size()) {
+        session->formatted.resize(new_len);
+        new_len = llama_chat_apply_template(llama_model_chat_template(model, nullptr), session->messages.data(), session->messages.size(), true, session->formatted.data(), session->formatted.size());
     }
     if (new_len < 0) {
         error_ = "Error: failed to apply the chat template";
@@ -243,19 +303,19 @@ bool LlamaRuntime::generateResponse(int session_id, const std::string &input_pro
     }
 
     // remove previous messages to obtain the prompt to generate the response
-    std::string prompt(formatted.begin(), formatted.begin() + new_len);
+    std::string prompt(session->formatted.begin(), session->formatted.begin() + new_len);
 
     // Log tokenized prompt
     logDebug("Tokenized prompt: " + prompt+ "\n");
 
     // generate a response
-    if (!generate(ctx, smpl, prompt, callback, userData))
+    if (!generate(session, prompt, callback, userData))
     {
         return false;
     }
 
     // add the response to the messages, this is the history context used to provide llm with context in future prompts
-    messages.push_back({"assistant", strdup(response.c_str())});
+    session->messages.push_back({"assistant", strdup(session->response.c_str())});
 
     /*
     int prev_len = llama_chat_apply_template(llama_model_chat_template(model, nullptr), messages.data(), messages.size(), false, nullptr, 0);
@@ -288,8 +348,17 @@ bool isValidUtf8(const std::string& str) {
 }
 
 // Generates a response token by token
-bool LlamaRuntime::generate(llama_context* ctx, llama_sampler *smpl, const std::string &prompt, void (*callback)(const char*, void *), void *userData) {
-    response.clear(); // TODO move to LlamaSession
+bool LlamaRuntime::generate(LlamaSession *session, const std::string &prompt, void (*callback)(const char*, void *), void *userData) {
+
+    if(!session) {
+        error_ = "Error: Generate, session is null";
+        logError(error_);
+        return false;
+    }
+
+    session->response.clear(); // TODO move to LlamaSession
+    llama_context* ctx = session->ctx;
+    llama_sampler *smpl = session->smpl;
 
     const bool is_first = llama_get_kv_cache_used_cells(ctx) == 0;
 
@@ -355,15 +424,19 @@ bool LlamaRuntime::generate(llama_context* ctx, llama_sampler *smpl, const std::
                 callback(piece.c_str(), userData);
         }
 
-        response += piece;
+        session->response += piece;
         batch = llama_batch_get_one(&new_token_id, 1);
     }
 
     return true;
 }
 
-const std::string LlamaRuntime::getResponse() {
-    return response;
+const std::string LlamaRuntime::getResponse(int session_id) {
+    LlamaSession *session = getSession(session_id);
+    if (session)
+        return session->response;
+
+    return std::string();
 }
 
 std::vector<llama_token> LlamaRuntime::tokenizePrompt(const std::string &prompt, bool is_first) {
@@ -469,14 +542,14 @@ std::string LlamaRuntime::getContextInfo() {
 
     for (auto& [sessionId, session] : sessions) {
 
-        ss << "Total Messages: " << messages.size() << "\n";
-        for (size_t i = 0; i < messages.size(); i++) {
-            size_t char_count = strlen(messages[i].content);
-            int token_count = llama_tokenize(vocab, messages[i].content, char_count, nullptr, 0, true, false);
+        ss << "Total Messages: " << session->messages.size() << "\n";
+        for (size_t i = 0; i < session->messages.size(); i++) {
+            size_t char_count = strlen(session->messages[i].content);
+            int token_count = llama_tokenize(vocab, session->messages[i].content, char_count, nullptr, 0, true, false);
             total_char_count += char_count;
             total_token_count += token_count;
 
-            ss << "Message " << i << " | Role: " << messages[i].role
+            ss << "Message " << i << " | Role: " << session->messages[i].role
                << " | Size: " << char_count << " chars, " << token_count << " tokens\n";
         }
 

@@ -111,7 +111,7 @@ public:
     /**
      * @brief Get the full response.
      */
-    const std::string getResponse();
+    const std::string getResponse(int session_id);
 
     /**
      * @brief Parses a GGUF file and extracts metadata.
@@ -126,6 +126,12 @@ public:
     // -------------------------------------------------------------------------------------
 
     std::string getContextInfo();
+
+    bool createSession(int session_id);
+
+    bool clearSession(int session_id);
+
+    bool deleteSession(int session_id);
 
     // -------------------------------------------------------------------------------------
     // Logging
@@ -188,8 +194,7 @@ private:
      *
      * @note This function is called internally by `generateResponse` and requires a valid context.
      */
-    bool generate(llama_context* ctx,
-                  llama_sampler *smpl,
+    bool generate(LlamaSession *session,
                   const std::string &prompt,
                   void (*callback)(const char*, void *),
                   void *userData);
@@ -225,11 +230,10 @@ private:
      */
     static std::string llama_date;
 
-    std::vector<llama_chat_message> messages; ///< Stores chat messages.
-    std::vector<char> formatted;              ///< Formatted message buffer.
+    //std::vector<llama_chat_message> messages; ///< Stores chat messages.
+    //std::vector<char> formatted;              ///< Formatted message buffer.
     std::string error_;                       ///< Last recorded error message.
-    std::vector<std::string> errorMessages;   ///< List of error messages.
-    std::string response;                     ///< Last generated response.
+    //std::string response;                     ///< Last generated response.
 
     // -------------------------------------------------------------------------------------
     // Session Management

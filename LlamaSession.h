@@ -70,6 +70,9 @@ public:
     llama_context* ctx = nullptr; ///< Pointer to the model's runtime context.
     llama_sampler *smpl = nullptr; ///< Pointer to the sampling handler.
 
+    std::vector<llama_chat_message> messages; ///< Stores chat messages.
+    std::vector<char> formatted;              ///< Formatted message buffer.
+    std::string response;                     ///< Last generated response.
     /**
      * @brief Creates a new LlamaSession with a unique session ID.
      *
@@ -119,6 +122,13 @@ public:
         if (ctx) {
             llama_free(ctx);
             ctx = nullptr;
+        }
+    }
+
+    void clearHistory(){
+        // Free allocated message content
+        for (auto &msg : messages) {
+            free(const_cast<char *>(msg.content));
         }
     }
 

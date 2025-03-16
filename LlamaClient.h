@@ -85,6 +85,10 @@ public:
 
     std::string getModelFile();
 
+    bool createSession(int sessionId);
+    bool  clearSession(int sessionId);
+    bool deleteSession(int sessionId);
+
     /**
      * @brief Generates a response based on a given prompt.Using default session
      * @param prompt The input text to process.
@@ -141,10 +145,18 @@ private:
     typedef const char* (*ParseGGUFFunc)(const char*, void (*)(const char* key, GGUFType type, void* data, void *userData), void (*callback)(const char* message), void *userData);
     typedef void (*GetContextInfoFunc)(void (*callback)(const char* info, void *), void*);
 
+    typedef bool (*CreateSessionFunc)(int session_id);
+    typedef bool (*ClearSessionFunc)(int session_id);
+    typedef bool (*DeleteSessionFunc)(int session_id);
+
     LoadModelFunc loadModelFunc; ///< Function pointer for loading models
     GenerateResponseFunc generateResponseFunc; ///< Function pointer for generating responses
     ParseGGUFFunc parseGGUFFunc; ///< Function pointer for parsing GGUF metadata
     GetContextInfoFunc getContextInfoFunc;
+
+    CreateSessionFunc createSessionFunc;
+    ClearSessionFunc clearSessionFunc;
+    DeleteSessionFunc deleteSessionFunc;
     /**
      * @brief Handles streaming response tokens.
      * @param response The response token received.

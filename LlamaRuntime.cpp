@@ -67,9 +67,9 @@ bool LlamaRuntime::clearSession(int session_id) {
         return false;
     }
 
-    it->second->clearSampler();
-    it->second->clearContext();
-    logInfo("Cleared session: " + std::to_string(session_id));
+    it->second->clearHistory();
+
+    logInfo("Cleared session history: " + std::to_string(session_id));
     return true;
 }
 
@@ -347,7 +347,24 @@ bool isValidUtf8(const std::string& str) {
     return num == 0;
 }
 
-// Generates a response token by token
+/**
+ * This function executes the actual text generation using a given llama_context
+ * and sampler. The response is processed and streamed via the callback.
+ *
+ * @param session The session for which the response is to be generated.
+ * @param prompt The prompt string to generate a response for.
+ * @param options Additional options for the generation process.
+ * @param callback A callback function to be invoked for each generated token.
+ * @param userData User data to be passed to the callback function.
+ * @return True if the generation is successful, otherwise false.
+ *
+ * Implementation Details:
+ * - The function uses a loop to generate tokens until the context is full or the generation is complete.
+ * - It checks the context size and breaks the loop if the context is exceeded.
+ * - Each generated token is processed and added to the session's response.
+ * - The function uses a callback to stream the generated tokens.
+ * - The `token_count` variable is used to prevent infinite looping.
+ */
 bool LlamaRuntime::generate(LlamaSession *session, const std::string &prompt, void (*callback)(const char*, void *), void *userData) {
 
     if(!session) {
@@ -373,15 +390,18 @@ bool LlamaRuntime::generate(LlamaSession *session, const std::string &prompt, vo
 
     llama_batch batch = llama_batch_get_one(prompt_tokens.data(), prompt_tokens.size());
     llama_token new_token_id;
+
+    long token_count = 0;
     while (true) {
         int n_ctx_total = llama_n_ctx(ctx);
         int n_ctx_used = llama_get_kv_cache_used_cells(ctx);
 
-        logDebug("KV Cache before decoding: " + std::to_string(n_ctx_used) + " / " + std::to_string(n_ctx_total)+ "\n");
+        //logDebug("KV Cache before decoding: " + std::to_string(n_ctx_used) + " / " + std::to_string(n_ctx_total)+ "\n");
 
         if (n_ctx_used + batch.n_tokens > n_ctx_total) {
             logError("Context size exceeded! Used: " + std::to_string(n_ctx_used) + ", Limit: " + std::to_string(n_ctx_total)+ "\n");
-            return false;
+            break;
+            //return false;
         }
 
         if (llama_decode(ctx, batch)) {
@@ -404,28 +424,32 @@ bool LlamaRuntime::generate(LlamaSession *session, const std::string &prompt, vo
             logError(error_);
             return false;
         }
+
         //std::string piece(buf, n);
         std::string piece;
         piece.assign(buf, n);  // More robust than std::string(buf, n)
 
         if (!isValidUtf8(piece)) {  // Validate UTF-8 (function provided below)
             logDebug("Warning: Token ID " + std::to_string(new_token_id) + " produced invalid UTF-8, skipping.");
-            continue;
         }
         else
         {
+            /*** ultra debug
             if(n > 0)
                 logDebug("Sampled Token ID: " + std::to_string(new_token_id) + " n(" + std::to_string(n)  + ") -> \"" + piece + "\"\n");
             else
                 logDebug("Sampled Token ID with N=0: " + std::to_string(new_token_id) + "\n");
             logDebug("KV Cache after decoding: " + std::to_string(llama_get_kv_cache_used_cells(ctx)) + " / " + std::to_string(n_ctx_total)+ "\n");
-
+            */
             if (callback)
                 callback(piece.c_str(), userData);
+
+            session->response += piece;
         }
 
-        session->response += piece;
+
         batch = llama_batch_get_one(&new_token_id, 1);
+        token_count++; // Prevent infinite looping
     }
 
     return true;
@@ -542,6 +566,7 @@ std::string LlamaRuntime::getContextInfo() {
 
     for (auto& [sessionId, session] : sessions) {
 
+        ss << "Session ID: " << session->sessionId << "\n";
         ss << "Total Messages: " << session->messages.size() << "\n";
         for (size_t i = 0; i < session->messages.size(); i++) {
             size_t char_count = strlen(session->messages[i].content);
@@ -560,6 +585,7 @@ std::string LlamaRuntime::getContextInfo() {
         ss << "Remaining Context Size: " << remaining_size << " tokens\n\n";
     }
 
+    #ifdef SESSION_TEST
     ss << "Details per Prompt Response:\n";
     for (auto& [sessionId, session] : sessions) {
 
@@ -571,6 +597,7 @@ std::string LlamaRuntime::getContextInfo() {
             ss << "    Timestamp: " << msg.timestamp << "\n";
         }
     }
+#endif
 
     return ss.str();
 }

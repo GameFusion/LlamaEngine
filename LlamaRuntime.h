@@ -127,10 +127,28 @@ public:
 
     std::string getContextInfo();
 
+    /**
+     * Clears the specified session.
+     *
+     * @param session_id The ID of the session to create.
+     * @return True if a new session was successfully created.
+     */
     bool createSession(int session_id);
 
+    /**
+     * Clears the specified session.
+     *
+     * @param session_id The ID of the session to clear the history.
+     * @return True if the session was successfully cleared, otherwise false.
+     */
     bool clearSession(int session_id);
 
+    /**
+     * Delete the specified session.
+     *
+     * @param session_id The ID of the session to delete.
+     * @return True if the session was successfully delete.
+     */
     bool deleteSession(int session_id);
 
     // -------------------------------------------------------------------------------------
@@ -179,20 +197,20 @@ public:
     void logDebug(const std::string& debugMessage);
 
 private:
+
+    // -------------------------------------------------------------------------------------
+    // Response Generation
+    // -------------------------------------------------------------------------------------
+
     /**
-     * @brief Internal method to generate a response from the model.
+     * Generates a response for the given session based on the provided prompt.
      *
-     * This function executes the actual text generation using a given llama_context
-     * and sampler. The response is processed and streamed via the callback.
-     *
-     * @param ctx Pointer to the llama context associated with the session.
-     * @param smpl Pointer to the sampler used for text generation.
-     * @param prompt The input text prompt for generation.
-     * @param callback Function pointer for handling generated text chunks.
-     * @param userData Optional user-defined data passed to the callback.
-     * @return True if generation was successful, false otherwise.
-     *
-     * @note This function is called internally by `generateResponse` and requires a valid context.
+     * @param session The session for which the response is to be generated.
+     * @param prompt The prompt string to generate a response for.
+     * @param options Additional options for the generation process.
+     * @param callback A callback function to be invoked for each generated token.
+     * @param userData User data to be passed to the callback function.
+     * @return True if the generation is successful, otherwise false.
      */
     bool generate(LlamaSession *session,
                   const std::string &prompt,
@@ -223,17 +241,9 @@ private:
      * @brief Date of the Llama model commit (retrieved from git log).
      * Run the command 'git log - 1 --format = % cd' in the llama.cpp repository to obtain this value.
      */
-
-    /**
-     * @brief Date of the Llama model commit (retrieved from git log).
-     * Run the command '$ git log -1 --format=%cd' in the llama.cpp repository to obtain this value.
-     */
     static std::string llama_date;
 
-    //std::vector<llama_chat_message> messages; ///< Stores chat messages.
-    //std::vector<char> formatted;              ///< Formatted message buffer.
     std::string error_;                       ///< Last recorded error message.
-    //std::string response;                     ///< Last generated response.
 
     // -------------------------------------------------------------------------------------
     // Session Management

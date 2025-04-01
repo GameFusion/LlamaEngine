@@ -1,6 +1,10 @@
 #include "LlamaRuntime.h"
 #include "LlamaSession.h"
 
+#include "common.h"
+
+#include "LlamaRuntimeVision.h"
+
 #include <sstream>
 
 // define windows stubs
@@ -9,7 +13,7 @@
 #endif
 
 // Constructor initializes pointers to null
-LlamaRuntime::LlamaRuntime() : model(nullptr) {}
+LlamaRuntime::LlamaRuntime() : model(nullptr), clip_model(nullptr) {}
 
 // Destructor ensures proper resource cleanup
 LlamaRuntime::~LlamaRuntime() {
@@ -25,11 +29,69 @@ LlamaRuntime::~LlamaRuntime() {
         free(const_cast<char *>(msg.content));
     }
 */
+    if (clip_model) {
+        clip_free(clip_model);
+        clip_model = nullptr;
+    }
+
     for (auto& [sessionId, session] : sessions) {
         delete session;
     }
     sessions.clear();
 }
+
+// Check if vision model is loaded
+bool LlamaRuntime::isVisionModelLoaded() const {
+    return clip_model != nullptr;
+}
+
+// Load CLIP model for image processing
+bool LlamaRuntime::loadClipModel(const std::string &clip_model_path, void (*callback)(const char*, void *userData), void *userData) {
+    clipModelPath = clip_model_path;
+
+    if (clip_model) {
+        clip_free(clip_model);
+        clip_model = nullptr;
+    }
+
+    logInfo("Loading CLIP model: " + clipModelPath);
+    try {
+        // Attempt to load the CLIP model
+        clip_model = clip_model_load(clipModelPath.c_str(), false);
+
+        // Check if loading was successful
+        if (!clip_model) {
+            error_ = "Failed to load CLIP model: model pointer is null";
+            logError(error_);
+            if(callback)
+                callback("Failed to load CLIP model: model pointer is null", userData);
+            return false;
+        }
+
+        logInfo("CLIP model loaded successfully");
+        if(callback)
+            callback("CLIP model loaded successfully", userData);
+
+        return true;
+    }
+    catch (const std::exception& e) {
+        // Catch standard exceptions
+        error_ = "Exception while loading CLIP model: " + std::string(e.what());
+        logError(error_);
+        if(callback)
+            callback(error_.c_str(), userData);
+        return false;
+    }
+    catch (...) {
+        // Catch any other exceptions
+        error_ = "Unknown exception while loading CLIP model";
+        logError(error_);
+        if(callback)
+            callback(error_.c_str(), userData);
+        return false;
+    }
+}
+
 
 bool LlamaRuntime::createSession(int session_id) {
     if (sessions.find(session_id) != sessions.end()) {
@@ -262,6 +324,9 @@ LlamaSession *LlamaRuntime::getSession(int session_id){
  */
 bool LlamaRuntime::generateResponse(int session_id, const std::string &input_prompt, void (*callback)(const char*, void *userData), void *userData) {
 
+    if(hasVision())
+        return ::generateVision(session_id, input_prompt, callback, userData);
+
     LlamaSession *session = getSession(session_id);
     if (session == nullptr) {
         // The session exists but is nullptr (invalid session)
@@ -365,59 +430,88 @@ bool isValidUtf8(const std::string& str) {
  * - The function uses a callback to stream the generated tokens.
  * - The `token_count` variable is used to prevent infinite looping.
  */
+// Generate response (following gemma3-cli.cpp style)
 bool LlamaRuntime::generate(LlamaSession *session, const std::string &prompt, void (*callback)(const char*, void *), void *userData) {
-
-    if(!session) {
+    if (!session) {
         error_ = "Error: Generate, session is null";
         logError(error_);
         return false;
     }
 
-    session->response.clear(); // TODO move to LlamaSession
+    session->response.clear();
     llama_context* ctx = session->ctx;
     llama_sampler *smpl = session->smpl;
 
     const bool is_first = llama_get_kv_cache_used_cells(ctx) == 0;
 
-    std::vector<llama_token> prompt_tokens = tokenizePrompt(prompt, is_first);
-    if (prompt_tokens.empty()) {
-        error_ = "Error: Failed to tokenize the prompt";
-        logError(error_);
-        return false;
+    // If prompt is not empty, process it first
+    std::vector<llama_token> prompt_tokens;
+    if (!prompt.empty()) {
+        prompt_tokens = tokenizePrompt(prompt, is_first);
+        if (prompt_tokens.empty()) {
+            error_ = "Error: Failed to tokenize the prompt";
+            logError(error_);
+            return false;
+        }
+
+        logDebug("Total tokens in prompt: " + std::to_string(prompt_tokens.size())+ "\n");
+
+        // Create a properly initialized batch manually instead of using llama_batch_get_one
+        llama_batch batch = llama_batch_init(prompt_tokens.size(), 0, 1);
+        batch.n_tokens = prompt_tokens.size();
+
+        // Set the token array
+        for (size_t i = 0; i < prompt_tokens.size(); i++) {
+            batch.token[i] = prompt_tokens[i];
+        }
+
+        // Set positions for tokens
+        for (size_t i = 0; i < prompt_tokens.size(); i++) {
+            batch.pos[i] = session->n_past + i;
+            batch.n_seq_id[i] = 1;
+            batch.logits[i] = false;
+            // Set sequence ID pointers - assuming a single sequence ID of 0
+            batch.seq_id[i][0] = 0;
+        }
+
+        // Last token should have logits
+        batch.logits[batch.n_tokens - 1] = true;
+
+        if (llama_decode(ctx, batch)) {
+            error_ = "Error: failed to decode prompt";
+            logError(error_);
+            llama_batch_free(batch);
+            return false;
+        }
+
+        // Update position counter
+        session->n_past += prompt_tokens.size();
+
+        // Free the batch
+        llama_batch_free(batch);
     }
 
-    logDebug("Total tokens in prompt: " + std::to_string(prompt_tokens.size())+ "\n");
-
-    llama_batch batch = llama_batch_get_one(prompt_tokens.data(), prompt_tokens.size());
+    // Generation loop
     llama_token new_token_id;
-
     long token_count = 0;
     while (true) {
         int n_ctx_total = llama_n_ctx(ctx);
         int n_ctx_used = llama_get_kv_cache_used_cells(ctx);
 
-        //logDebug("KV Cache before decoding: " + std::to_string(n_ctx_used) + " / " + std::to_string(n_ctx_total)+ "\n");
-
-        if (n_ctx_used + batch.n_tokens > n_ctx_total) {
-            logError("Context size exceeded! Used: " + std::to_string(n_ctx_used) + ", Limit: " + std::to_string(n_ctx_total)+ "\n");
+        if (n_ctx_used >= n_ctx_total - 4) {
+            logError("Context size exceeded! Used: " + std::to_string(n_ctx_used) + ", Limit: " + std::to_string(n_ctx_total) + "\n");
             break;
-            //return false;
         }
 
-        if (llama_decode(ctx, batch)) {
-            error_ = "Error: failed to decode";
-            logError(error_);
-            return false;
-        }
-
+        // Sample next token
         new_token_id = llama_sampler_sample(smpl, ctx, -1);
 
+        // Check for end of generation
         if (llama_vocab_is_eog(vocab, new_token_id)) {
             break;
         }
 
         char buf[256] = {0};  // Ensures all bytes are initialized to '\0'
-
         int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true);
         if (n < 0) {
             error_ = "Error: failed to convert token to piece";
@@ -425,35 +519,54 @@ bool LlamaRuntime::generate(LlamaSession *session, const std::string &prompt, vo
             return false;
         }
 
-        //std::string piece(buf, n);
         std::string piece;
         piece.assign(buf, n);  // More robust than std::string(buf, n)
 
-        if (!isValidUtf8(piece)) {  // Validate UTF-8 (function provided below)
+        if (!isValidUtf8(piece)) {  // Validate UTF-8
             logDebug("Warning: Token ID " + std::to_string(new_token_id) + " produced invalid UTF-8, skipping.");
         }
-        else
-        {
-            /*** ultra debug
-            if(n > 0)
-                logDebug("Sampled Token ID: " + std::to_string(new_token_id) + " n(" + std::to_string(n)  + ") -> \"" + piece + "\"\n");
-            else
-                logDebug("Sampled Token ID with N=0: " + std::to_string(new_token_id) + "\n");
-            logDebug("KV Cache after decoding: " + std::to_string(llama_get_kv_cache_used_cells(ctx)) + " / " + std::to_string(n_ctx_total)+ "\n");
-            */
+        else {
             if (callback)
                 callback(piece.c_str(), userData);
 
             session->response += piece;
         }
 
+        // Prepare batch for next token - use llama_batch_init to ensure arrays are properly allocated
+        llama_batch batch = llama_batch_init(1, 0, 1);
+        batch.n_tokens = 1;
 
-        batch = llama_batch_get_one(&new_token_id, 1);
-        token_count++; // Prevent infinite looping
+        // Set token, position, and other attributes
+        batch.token[0] = new_token_id;
+        batch.pos[0] = session->n_past;
+        batch.n_seq_id[0] = 1;
+        batch.seq_id[0][0] = 0;
+        batch.logits[0] = true;
+
+        if (llama_decode(ctx, batch)) {
+            error_ = "Error: failed to decode token";
+            logError(error_);
+            llama_batch_free(batch);
+            return false;
+        }
+
+        // Update position counter
+        session->n_past += 1;
+        token_count++;
+
+        // Free the batch
+        llama_batch_free(batch);
+
+        // Safety check to prevent infinite loops
+        if (token_count > 4096) {
+            logWarning("Generation exceeded maximum token count, stopping.");
+            break;
+        }
     }
 
     return true;
 }
+
 
 const std::string LlamaRuntime::getResponse(int session_id) {
     LlamaSession *session = getSession(session_id);
@@ -600,4 +713,674 @@ std::string LlamaRuntime::getContextInfo() {
 #endif
 
     return ss.str();
+}
+
+// Helper function to evaluate text without generating a response
+bool LlamaRuntime::eval_text(LlamaSession *session, const std::string &text) {
+    if (!session || !session->ctx) {
+        error_ = "Error: Invalid session or context";
+        logError(error_);
+        return false;
+    }
+
+    logDebug("Evaluating text: " + text);
+
+    // Get the is_first flag (true if KV cache is empty)
+    const bool is_first = llama_get_kv_cache_used_cells(session->ctx) == 0;
+
+    // Tokenize the input text
+    std::vector<llama_token> tokens = tokenizePrompt(text, is_first);
+    if (tokens.empty()) {
+        error_ = "Error: Failed to tokenize text";
+        logError(error_);
+        return false;
+    }
+
+    // Create a batch for decoding with proper capacity
+    llama_batch batch = llama_batch_init(tokens.size(), 0, 1);
+
+    // Fill batch with token data
+    for (size_t i = 0; i < tokens.size(); i++) {
+        batch.token[i] = tokens[i];
+        batch.pos[i] = session->n_past + i;
+        batch.n_seq_id[i] = 1;
+        batch.seq_id[i][0] = 0;  // Sequence ID 0
+        batch.logits[i] = (i == tokens.size() - 1) ? true : false;  // Only last token needs logits
+    }
+
+    // Decode the batch
+    if (llama_decode(session->ctx, batch)) {
+        error_ = "Error: Failed to decode text";
+        logError(error_);
+        llama_batch_free(batch);
+        return false;
+    }
+
+    // Update the session's past token count
+    session->n_past += tokens.size();
+    logDebug("Text evaluated successfully, n_past now: " + std::to_string(session->n_past));
+
+    // Clean up
+    llama_batch_free(batch);
+
+    return true;
+}
+
+// Process image file and embed it (following gemma3-cli.cpp style)
+// Process image file and embed it (following gemma3-cli.cpp style)
+bool LlamaRuntime::processImageFileAndEmbed(LlamaSession *session, const std::string &image_path) {
+    if (!clip_model || !session || !model) {
+        error_ = "Error: CLIP model or session not initialized";
+        logError(error_);
+        return false;
+    }
+
+    llama_context* ctx = session->ctx;
+    if (!ctx) {
+        error_ = "Error: Context not initialized";
+        logError(error_);
+        return false;
+    }
+
+    // Get embeddings dimension
+    int n_embd = llama_model_n_embd(model);
+    int n_image_tokens = 256; // Default for most vision models
+
+    // Allocate memory for embeddings
+    std::vector<float> image_embd(n_image_tokens * n_embd);
+
+    // Create image structure
+    clip_image_u8* img_u8 = clip_image_u8_init();
+    if (!img_u8) {
+        error_ = "Error: Failed to initialize image";
+        logError(error_);
+        return false;
+    }
+
+    // Load image from file
+    logInfo("Loading image from file: " + image_path);
+    bool load_ok = clip_image_load_from_file(image_path.c_str(), img_u8);
+    if (!load_ok) {
+        error_ = "Error: Failed to load image from file: " + image_path;
+        logError(error_);
+        clip_image_u8_free(img_u8);
+        return false;
+    }
+
+    // Preprocess image
+    clip_image_f32_batch batch_f32;
+    bool preprocess_ok = clip_image_preprocess(clip_model, img_u8, &batch_f32);
+    if (!preprocess_ok) {
+        error_ = "Error: Failed to preprocess image";
+        logError(error_);
+        clip_image_u8_free(img_u8);
+        return false;
+    }
+
+    // Encode image to embeddings
+    logInfo("Encoding image to embeddings");
+    bool encode_ok = clip_image_batch_encode(clip_model, 4, &batch_f32, image_embd.data());
+    if (!encode_ok) {
+        error_ = "Error: Failed to encode image";
+        logError(error_);
+        clip_image_f32_batch_free(&batch_f32);
+        clip_image_u8_free(img_u8);
+        return false;
+    }
+
+    clip_image_f32_batch_free(&batch_f32);
+    clip_image_u8_free(img_u8);
+
+    // Process and embed the image following gemma3-cli.cpp approach
+
+    // 1. Add start-of-image marker
+    if (eval_text(session, "<start_of_image>")) {
+        error_ = "Error: Failed to process start-of-image marker";
+        logError(error_);
+        return false;
+    }
+
+    // 2. Disable causal attention for image processing
+    llama_set_causal_attn(ctx, false);
+
+    // 3. Create vectors for batch data
+    std::vector<llama_pos> pos(n_image_tokens);
+    std::vector<int32_t> n_seq_id(n_image_tokens);
+    std::vector<llama_seq_id> seq_id_0(1, 0);  // Single sequence ID with value 0
+    std::vector<llama_seq_id*> seq_ids(n_image_tokens + 1);
+    std::vector<int8_t> logits(n_image_tokens);
+
+    // 4. Set seq_ids last element to nullptr
+    seq_ids[n_image_tokens] = nullptr;
+
+    // 5. Initialize batch structure
+    llama_batch batch = {
+        /* n_tokens   = */ n_image_tokens,
+        /* tokens     = */ nullptr,
+        /* embd       = */ image_embd.data(),
+        /* pos        = */ pos.data(),
+        /* n_seq_id   = */ n_seq_id.data(),
+        /* seq_id     = */ seq_ids.data(),
+        /* logits     = */ logits.data(),
+    };
+
+    // 6. Fill batch arrays
+    for (int i = 0; i < n_image_tokens; i++) {
+        batch.pos[i] = session->n_past + i;
+        batch.n_seq_id[i] = 1;
+        batch.seq_id[i] = seq_id_0.data();
+        batch.logits[i] = false;
+    }
+
+    // 7. Decode image embeddings
+    if (llama_decode(ctx, batch)) {
+        error_ = "Error: Failed to decode image embeddings";
+        logError(error_);
+        return false;
+    }
+
+    // 8. Update past tokens count
+    session->n_past += n_image_tokens;
+
+    // 9. Re-enable causal attention
+    llama_set_causal_attn(ctx, true);
+
+    // 10. Add end-of-image marker
+    if (eval_text(session, "<end_of_image>")) {
+        error_ = "Error: Failed to process end-of-image marker";
+        logError(error_);
+        return false;
+    }
+
+    logInfo("Image processed and embedded successfully");
+    return true;
+}
+
+// Process image from pixel data and embed it (following gemma3-cli.cpp style)
+// Process image from pixel data and embed it (following gemma3-cli.cpp style)
+bool LlamaRuntime::processImagePixelsAndEmbed(LlamaSession *session, const uint8_t* rgb_pixels, int width, int height) {
+    if (!clip_model || !session || !model) {
+        error_ = "Error: CLIP model or session not initialized";
+        logError(error_);
+        return false;
+    }
+
+    llama_context* ctx = session->ctx;
+    if (!ctx) {
+        error_ = "Error: Context not initialized";
+        logError(error_);
+        return false;
+    }
+
+    // Get embeddings dimension
+    int n_embd = llama_model_n_embd(model);
+    int n_image_tokens = 256; // Default for most vision models
+
+    // Allocate memory for embeddings
+    std::vector<float> image_embd(n_image_tokens * n_embd);
+
+    // Create image structure
+    clip_image_u8* img_u8 = clip_image_u8_init();
+    if (!img_u8) {
+        error_ = "Error: Failed to initialize image";
+        logError(error_);
+        return false;
+    }
+
+    // Build image from pixel data
+    logInfo("Building image from pixels");
+    clip_build_img_from_pixels(rgb_pixels, width, height, img_u8);
+
+    // Preprocess image
+    clip_image_f32_batch batch_f32;
+    bool preprocess_ok = clip_image_preprocess(clip_model, img_u8, &batch_f32);
+    if (!preprocess_ok) {
+        error_ = "Error: Failed to preprocess image";
+        logError(error_);
+        clip_image_u8_free(img_u8);
+        return false;
+    }
+
+    // Encode image to embeddings
+    logInfo("Encoding image to embeddings");
+    bool encode_ok = clip_image_batch_encode(clip_model, 4, &batch_f32, image_embd.data());
+    if (!encode_ok) {
+        error_ = "Error: Failed to encode image";
+        logError(error_);
+        clip_image_f32_batch_free(&batch_f32);
+        clip_image_u8_free(img_u8);
+        return false;
+    }
+
+    clip_image_f32_batch_free(&batch_f32);
+    clip_image_u8_free(img_u8);
+
+    // Process and embed the image following gemma3-cli.cpp approach
+
+    // 1. Add start-of-image marker
+    if (eval_text(session, "<start_of_image>")) {
+        error_ = "Error: Failed to process start-of-image marker";
+        logError(error_);
+        return false;
+    }
+
+    // 2. Disable causal attention for image processing
+    llama_set_causal_attn(ctx, false);
+
+    // 3. Create vectors for batch data
+    std::vector<llama_pos> pos(n_image_tokens);
+    std::vector<int32_t> n_seq_id(n_image_tokens);
+    std::vector<llama_seq_id> seq_id_0(1, 0);  // Single sequence ID with value 0
+    std::vector<llama_seq_id*> seq_ids(n_image_tokens + 1);
+    std::vector<int8_t> logits(n_image_tokens);
+
+    // 4. Set seq_ids last element to nullptr
+    seq_ids[n_image_tokens] = nullptr;
+
+    // 5. Initialize batch structure
+    llama_batch batch = {
+        /* n_tokens   = */ n_image_tokens,
+        /* tokens     = */ nullptr,
+        /* embd       = */ image_embd.data(),
+        /* pos        = */ pos.data(),
+        /* n_seq_id   = */ n_seq_id.data(),
+        /* seq_id     = */ seq_ids.data(),
+        /* logits     = */ logits.data(),
+    };
+
+    // 6. Fill batch arrays
+    for (int i = 0; i < n_image_tokens; i++) {
+        batch.pos[i] = session->n_past + i;
+        batch.n_seq_id[i] = 1;
+        batch.seq_id[i] = seq_id_0.data();
+        batch.logits[i] = false;
+    }
+
+    // 7. Decode image embeddings
+    if (llama_decode(ctx, batch)) {
+        error_ = "Error: Failed to decode image embeddings";
+        logError(error_);
+        return false;
+    }
+
+    // 8. Update past tokens count
+    session->n_past += n_image_tokens;
+
+    // 9. Re-enable causal attention
+    llama_set_causal_attn(ctx, true);
+
+    // 10. Add end-of-image marker
+    if (eval_text(session, "<end_of_image>")) {
+        error_ = "Error: Failed to process end-of-image marker";
+        logError(error_);
+        return false;
+    }
+
+    logInfo("Image processed and embedded successfully");
+    return true;
+}
+
+// Generate response with image from file
+// Generate response with image from file (following gemma3-cli.cpp style)
+bool LlamaRuntime::generateResponseWithImageFile(int session_id, const std::string &input_prompt,
+                                                 const std::string &image_path,
+                                                 void (*callback)(const char*, void *userData),
+                                                 void *userData) {
+    main_vision(input_prompt.c_str(), image_path.c_str());
+
+    return generateResponse(session_id, input_prompt, callback, userData);
+
+    // Get the session
+    LlamaSession *session = getSession(session_id);
+    if (!session) {
+        error_ = "Error: Session is invalid.";
+        logError(error_);
+        return false;
+    }
+
+    // Check if models are loaded
+    if (!model || !clip_model) {
+        error_ = "Error: Models not loaded.";
+        logError(error_);
+        return false;
+    }
+
+    session->response.clear();
+
+    // Following gemma3-cli.cpp is_single_turn approach
+
+    // 1. Add system prompt if needed
+    if (llama_get_kv_cache_used_cells(session->ctx) == 0) {
+        if (eval_text(session, "<bos>")) {
+            return false;
+        }
+    }
+
+    // 2. Start user turn
+    if (eval_text(session, "<start_of_turn>user\n")) {
+        return false;
+    }
+
+    // 3. Process the image
+    if (!processImageFileAndEmbed(session, image_path)) {
+        return false;
+    }
+
+    // 4. Add user prompt if provided
+    if (!input_prompt.empty()) {
+        if (eval_text(session, input_prompt)) {
+            return false;
+        }
+    }
+
+    // 5. End user turn and start model turn
+    if (eval_text(session, "<end_of_turn><start_of_turn>model\n")) {
+        return false;
+    }
+
+    // 6. Generate the response
+    if (!generateVision(session, input_prompt, callback, userData)) {
+        return false;
+    }
+
+    // 7. End model turn
+    if (eval_text(session, "<end_of_turn>")) {
+        return false;
+    }
+
+    // Store the messages for history context
+    session->messages.push_back({"user", strdup(input_prompt.c_str())});
+    session->messages.push_back({"assistant", strdup(session->response.c_str())});
+
+    return true;
+}
+
+// Generate response with image from pixel data (following gemma3-cli.cpp style)
+bool LlamaRuntime::generateResponseWithImagePixels(int session_id, const std::string &input_prompt,
+                                                   const uint8_t* rgb_pixels, int width, int height,
+                                                   void (*callback)(const char*, void *userData),
+                                                   void *userData) {
+    // Get the session
+    LlamaSession *session = getSession(session_id);
+    if (!session) {
+        error_ = "Error: Session is invalid.";
+        logError(error_);
+        return false;
+    }
+
+    // Check if models are loaded
+    if (!model || !clip_model) {
+        error_ = "Error: Models not loaded.";
+        logError(error_);
+        return false;
+    }
+
+    session->response.clear();
+
+    // Following gemma3-cli.cpp is_single_turn approach
+
+    // 1. Add system prompt if needed
+    if (llama_get_kv_cache_used_cells(session->ctx) == 0) {
+        if (eval_text(session, "<bos>")) {
+            return false;
+        }
+    }
+
+    // 2. Start user turn
+    if (eval_text(session, "<start_of_turn>user\n")) {
+        return false;
+    }
+
+    // 3. Process the image
+    if (!processImagePixelsAndEmbed(session, rgb_pixels, width, height)) {
+        return false;
+    }
+
+    // 4. Add user prompt if provided
+    if (!input_prompt.empty()) {
+        if (eval_text(session, input_prompt)) {
+            return false;
+        }
+    }
+
+    // 5. End user turn and start model turn
+    if (eval_text(session, "<end_of_turn><start_of_turn>model\n")) {
+        return false;
+    }
+
+    // 6. Generate the response
+    if (!generateVision(session, "", callback, userData)) {
+        return false;
+    }
+
+    // 7. End model turn
+    if (eval_text(session, "<end_of_turn>")) {
+        return false;
+    }
+
+    // Store the messages for history context
+    session->messages.push_back({"user", strdup(input_prompt.c_str())});
+    session->messages.push_back({"assistant", strdup(session->response.c_str())});
+
+    return true;
+}
+
+
+// Generate response (following gemma3-cli.cpp style)
+// Generate response (following gemma3-cli.cpp style)
+bool LlamaRuntime::generateVision(LlamaSession *session, const std::string &prompt, void (*callback)(const char*, void *), void *userData) {
+    if (!session || !session->ctx) {
+        error_ = "Error: Invalid session or context";
+        logError(error_);
+        return false;
+    }
+
+    session->response.clear();
+    llama_context* ctx = session->ctx;
+
+    // Process initial prompt if provided
+    if (!prompt.empty()) {
+        if (eval_text(session, prompt)) {
+            return false;
+        }
+    }
+
+    // Make sure vocab is valid
+    if (!vocab) {
+        vocab = llama_model_get_vocab(model);
+    }
+
+    // Generation parameters
+    int n_predict = 4096; // Maximum tokens to generate
+    float temp = 0.8f;    // Temperature
+    float topp = 0.95f;   // Top-p sampling
+
+    for (int i = 0; i < n_predict; i++) {
+        // Check context size limits
+        int n_ctx_total = llama_n_ctx(ctx);
+        int n_ctx_used = llama_get_kv_cache_used_cells(ctx);
+
+        if (n_ctx_used >= n_ctx_total - 4) {
+            logInfo("Context size limit reached");
+            break;
+        }
+
+        // Get logits for the last token
+        float* logits = llama_get_logits(ctx);
+        if (!logits) {
+            error_ = "Error: Failed to get logits";
+            logError(error_);
+            return false;
+        }
+
+        // Get vocabulary size
+        //int n_vocab = llama_vocab_size(vocab);
+        // Replace this line:
+        //int n_vocab = ::llama_vocab_size(vocab);
+
+        // With one of these lines, depending on which is available in your llama.cpp version:
+        int n_vocab = ::llama_n_vocab(vocab);  // If available
+        // OR
+        //int n_vocab = llama_vocab_n_vocab(vocab);  // If available
+
+        // Simple token sampling implementation
+        llama_token token_id = -1;
+        try {
+            // Apply temperature to logits
+            std::vector<float> probs(n_vocab);
+            float max_logit = -INFINITY;
+
+            // Find max logit for numerical stability
+            for (int token_idx = 0; token_idx < n_vocab; token_idx++) {
+                if (logits[token_idx] > max_logit) {
+                    max_logit = logits[token_idx];
+                }
+            }
+
+            // Compute softmax with temperature
+            float sum = 0.0f;
+            for (int token_idx = 0; token_idx < n_vocab; token_idx++) {
+                probs[token_idx] = expf((logits[token_idx] - max_logit) / temp);
+                sum += probs[token_idx];
+            }
+
+            // Normalize
+            for (int token_idx = 0; token_idx < n_vocab; token_idx++) {
+                probs[token_idx] /= sum;
+            }
+
+            // Apply top-p sampling
+            std::vector<std::pair<float, llama_token>> sorted_probs;
+            for (int token_idx = 0; token_idx < n_vocab; token_idx++) {
+                sorted_probs.push_back({probs[token_idx], token_idx});
+            }
+
+            // Sort by probability (descending)
+            std::sort(sorted_probs.begin(), sorted_probs.end(),
+                      [](const auto& a, const auto& b) { return a.first > b.first; });
+
+            // Apply top-p filtering
+            float cumsum = 0.0f;
+            for (size_t i = 0; i < sorted_probs.size(); i++) {
+                cumsum += sorted_probs[i].first;
+                if (cumsum > topp) {
+                    // Truncate the vector
+                    sorted_probs.resize(i + 1);
+                    break;
+                }
+            }
+
+            // Renormalize
+            sum = 0.0f;
+            for (const auto& p : sorted_probs) {
+                sum += p.first;
+            }
+            for (auto& p : sorted_probs) {
+                p.first /= sum;
+            }
+
+            // Sample a token
+            float r = (float)rand() / RAND_MAX;
+            cumsum = 0.0f;
+            token_id = sorted_probs[sorted_probs.size() - 1].second; // Default to last token
+
+            for (const auto& p : sorted_probs) {
+                cumsum += p.first;
+                if (r < cumsum) {
+                    token_id = p.second;
+                    break;
+                }
+            }
+        }
+        catch (const std::exception& e) {
+            error_ = "Exception during sampling: " + std::string(e.what());
+            logError(error_);
+            return false;
+        }
+
+        // Check for end of generation
+        if (token_id < 0 || llama_vocab_is_eog(vocab, token_id)) {
+            logInfo("End of generation token encountered");
+            break;
+        }
+
+        // Convert token to text piece
+        std::string piece;
+        try {
+            char buf[256] = {0};
+            int n = llama_token_to_piece(vocab, token_id, buf, sizeof(buf), 0, true);
+            if (n < 0) {
+                error_ = "Error: Failed to convert token to piece";
+                logError(error_);
+                continue;  // Try to continue with next token
+            }
+            piece = std::string(buf, n);
+        }
+        catch (...) {
+            error_ = "Exception converting token to text";
+            logError(error_);
+            continue;  // Try to continue with next token
+        }
+
+        // Output the token
+        if (callback) {
+            callback(piece.c_str(), userData);
+        }
+        session->response += piece;
+
+        // Process the token to update context
+        try {
+            // Create batch for the token
+            llama_batch batch = llama_batch_init(1, 0, 1);
+            batch.token[0] = token_id;
+            batch.pos[0] = session->n_past;
+            batch.n_seq_id[0] = 1;
+            batch.seq_id[0][0] = 0;
+            batch.logits[0] = true;
+
+            // Decode the token
+            if (llama_decode(ctx, batch)) {
+                error_ = "Error: Failed to decode token";
+                logError(error_);
+                llama_batch_free(batch);
+                return false;
+            }
+
+            // Update past position
+            session->n_past++;
+
+            // Clean up
+            llama_batch_free(batch);
+        }
+        catch (...) {
+            error_ = "Exception processing token";
+            logError(error_);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+// Helper function to get token text (similar to common_token_to_piece)
+std::string LlamaRuntime::common_token_to_piece(llama_token token) {
+    std::string result;
+
+    // Get max possible length
+    int n = llama_token_to_piece(vocab, token, nullptr, 0, 0, true);
+    if (n <= 0) {
+        return result;
+    }
+
+    // Allocate buffer and get actual text
+    result.resize(n + 1); // +1 for null terminator
+    int actual_len = llama_token_to_piece(vocab,
+                                          token, &result[0], result.size(), 0, true);
+
+    if (actual_len > 0) {
+        result.resize(actual_len); // Remove null terminator from string
+        return result;
+    }
+
+    return "";
 }

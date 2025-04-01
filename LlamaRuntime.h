@@ -9,6 +9,7 @@
 
 #include "llama.h"
 #include "gguf.h"
+#include "clip.h"
 
 #include "GGUFMetadata.h"
 
@@ -37,23 +38,14 @@ public:
     bool loadModel();
 
     /**
-     * @brief Loads a model from a specific path with given parameters.
-     * @param modelPath Path to the model file.
-     * @param ngl Number of GPU layers to use.
-     * @param n_ctx Context size for the model.
-     * @return True if the model loads successfully, false otherwise.
-     */
-    bool loadModelInternal(const std::string &modelPath, int ngl, int n_ctx);
-
-    // -------------------------------------------------------------------------------------
-    // Model Configuration Setters
-    // -------------------------------------------------------------------------------------
-
-    /**
      * @brief Sets the file path for the model.
      * @param path Path to the model file.
      */
     void setModelPath(const std::string &path);
+
+    // -------------------------------------------------------------------------------------
+    // Model Configuration Setters
+    // -------------------------------------------------------------------------------------
 
     /**
      * @brief Sets the size of the context window.
@@ -108,6 +100,24 @@ public:
                             const std::string &input_prompt,
                             void (*callback)(const char*, void *userData),
                             void *userData);
+
+    // Vision capabilities
+    bool loadClipModel(const std::string &clip_model_path, void (*callback)(const char*, void *userData), void *userData);
+    bool isVisionModelLoaded() const;
+
+    // Generate response with image from file
+    bool generateResponseWithImageFile(int session_id, const std::string &input_prompt,
+                                       const std::string &image_path,
+                                       void (*callback)(const char*, void *userData),
+                                       void *userData = nullptr);
+
+    // Generate response with image from pixel data
+    bool generateResponseWithImagePixels(int session_id, const std::string &input_prompt,
+                                         const uint8_t* rgb_pixels, int width, int height,
+                                         void (*callback)(const char*, void *userData),
+                                         void *userData = nullptr);
+
+
     /**
      * @brief Get the full response.
      */
@@ -198,6 +208,16 @@ public:
 
 private:
 
+    /**
+     * @brief Loads a model from a specific path with given parameters.
+     * @param modelPath Path to the model file.
+     * @param ngl Number of GPU layers to use.
+     * @param n_ctx Context size for the model.
+     * @return True if the model loads successfully, false otherwise.
+     */
+    bool loadModelInternal(const std::string &modelPath, int ngl, int n_ctx);
+
+
     // -------------------------------------------------------------------------------------
     // Response Generation
     // -------------------------------------------------------------------------------------
@@ -216,6 +236,17 @@ private:
                   const std::string &prompt,
                   void (*callback)(const char*, void *),
                   void *userData);
+
+    bool generateVision(LlamaSession *session,
+                  const std::string &prompt,
+                  void (*callback)(const char*, void *),
+                  void *userData);
+
+    // Image processing and embedding
+    bool processImageFileAndEmbed(LlamaSession *session, const std::string &image_path);
+    bool processImagePixelsAndEmbed(LlamaSession *session, const uint8_t* rgb_pixels, int width, int height);
+    bool eval_text(LlamaSession *session, const std::string &text);
+
     /**
      * @brief Tokenizes an input prompt before feeding it to the model.
      * @param prompt The text to tokenize.
@@ -229,6 +260,7 @@ private:
     // -------------------------------------------------------------------------------------
 
     llama_model *model = nullptr;  ///< Pointer to the loaded model.
+    clip_ctx *clip_model = nullptr;
     const llama_vocab *vocab = nullptr; ///< Pointer to model vocabulary.
 
     /**
@@ -275,14 +307,18 @@ private:
     float temperature = 0.8f;      ///< Controls randomness in generation.
     int context_size = 4096;       ///< Number of tokens the model remembers.
     std::string modelPath;         ///< Path to the model file.
+    std::string clipModelPath;
     float topK = 40;               ///< Limits sampling to top-K probable tokens.
-    float topP = 1.0;              ///< Nucleus sampling threshold.
-    float repetitionPenalty = 1.0f; ///< Penalty factor for repeated tokens.
+    float topP = 0.95;              ///< Nucleus sampling threshold.
+    float repetitionPenalty = 1.1f; ///< Penalty factor for repeated tokens.
 
     /**
      * @brief Callback function for handling log messages.
      */
     LogCallback logCallback;
+
+
+    std::string common_token_to_piece(llama_token token);
 };
 
 #endif // LlamaRuntime_h

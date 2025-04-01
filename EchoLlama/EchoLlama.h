@@ -44,6 +44,7 @@ public:
      * @param prompt The input text prompt.
      */
     void generateResponse(const QString& prompt);
+    void generateResponse(const QString& prompt, const QString &imagePath);
 
 private slots:
     /**
@@ -97,6 +98,9 @@ private:
      */
     QToolButton *sendButton;
 
+    QToolButton* attachButton;  // ttachment button
+    QString attachedImagePath;  // Store the path to attached image
+
     /**
      * @brief Pointer to the Llama client instance.
      */
@@ -139,6 +143,9 @@ private:
      * @brief Applies styles to UI components (chatDisplay, inputGroup, promptInput, sendButton).
      */
     void applyStyles();
+
+    void setupAttachmentButton();  // Setup for the new button
+    void promptForImageFile();     // Handler for attachment button click
 
     QJsonArray modelsArray;
     DownloadManager *downloadManager;

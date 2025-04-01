@@ -80,6 +80,7 @@ public:
      * @return True if the model loads successfully, false otherwise.
      */
     bool loadModel(const std::string& modelName, struct ModelParameter* params, size_t paramCount, void (*callback)(const char*) = nullptr);
+    bool loadClipModel(const std::string& modelFile, void (*callback)(const char*, void *userData), void *userData);
 
     bool isModelLoaded();
 
@@ -101,6 +102,12 @@ public:
                           void (*streamCallback)(const char* msg, void* user_data),
                           void (*finishedCallback)(const char* msg, void* user_data), void *userData);
 
+    bool generateResponse(const std::string& prompt,
+                          const std::string& imagePath,
+                          void (*streamCallback)(const char* msg, void* user_data),
+                          void (*finishedCallback)(const char* msg, void* user_data), void *userData);
+
+
     /**
      * @brief Generates a response from the Llama model using a given prompt.
      *
@@ -114,10 +121,17 @@ public:
      * @param userData Optional user-defined data passed to both callbacks.
      * @return True if the response generation was successful, false otherwise.
      */
-    bool generateResponse(int sessionId, const std::string& prompt,
+    bool generateResponse(int sessionId,
+                          const std::string& prompt,
                           void (*streamCallback)(const char* msg, void* user_data),
                           void (*finishedCallback)(const char* msg, void* user_data), void *userData);
-
+/*
+    bool generateResponse(int sessionId,
+                          const std::string& prompt,
+                          const std::string& imagePath,
+                          void (*streamCallback)(const char* msg, void* user_data),
+                          void (*finishedCallback)(const char* msg, void* user_data), void *userData);
+*/
     std::string getContextInfo();
 
     /**
@@ -141,7 +155,9 @@ private:
 
     /** Function pointers for dynamic linking **/
     typedef bool (*LoadModelFunc)(const char*, struct ModelParameter* params, size_t paramCount, void (*)(const char*));
+    typedef bool (*LoadClipModelFunc)(const char*, void (*)(const char*, void *userData), void *userData);
     typedef bool (*GenerateResponseFunc)(int sessionId, const char*, void (*)(const char* token, void* user_data), void (*)(const char* completeResponse, void* user_data), void *userData);
+    typedef bool (*GenerateResponseWithImageFileFunc)(int sessionId, const char*, const char*, void (*)(const char* token, void* user_data), void (*)(const char* completeResponse, void* user_data), void *userData);
     typedef const char* (*ParseGGUFFunc)(const char*, void (*)(const char* key, GGUFType type, void* data, void *userData), void (*callback)(const char* message), void *userData);
     typedef void (*GetContextInfoFunc)(void (*callback)(const char* info, void *), void*);
 
@@ -150,7 +166,9 @@ private:
     typedef bool (*DeleteSessionFunc)(int session_id);
 
     LoadModelFunc loadModelFunc; ///< Function pointer for loading models
+    LoadClipModelFunc loadClipModelFunc;
     GenerateResponseFunc generateResponseFunc; ///< Function pointer for generating responses
+    GenerateResponseWithImageFileFunc generateResponseWithImageFileFunc;
     ParseGGUFFunc parseGGUFFunc; ///< Function pointer for parsing GGUF metadata
     GetContextInfoFunc getContextInfoFunc;
 
@@ -175,8 +193,9 @@ private:
     std::string library; ///< Path to the dynamic library
 
     bool modelLoaded = false; // Track if the model is successfully loaded
+    bool clipModelLoaded = false;
     std::string modelPathFile; // Path file name for current model
-
+    std::string clipModelPathFile;
 };
 
 #endif // LlamaClient_h

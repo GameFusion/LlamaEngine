@@ -59,6 +59,21 @@
         "parameters": "8B"
     },
     {
+        "id": "gemma-3-12b-it-q4_0",
+        "name": "Gemma 3 12B IT Q4",
+        "description": "",
+        "context_size": 150000,
+        "performance": "Medium",
+        "huggingface_url": "https://huggingface.co/",
+        "byte_length": 8074471904,
+        "license": "MIT License",
+        "license_url": "https://huggingface.co/gemma-3-12b-it-q4_0.gguf",
+        "huggingface_model_id": "lmstudio-community/gemma-3-12b-it-q4_0.gguf",
+        "download_link": "https://huggingface.co/gemma-3-12b-it-q4_0.gguf",
+	"mmproj": "mmproj-google_gemma-3-12b-it-f16.gguf",
+        "parameters": "8B"
+    },
+    {
         "name": "Qwen2.5-7B-Instruct-1M-GGUF",
         "description": "",
         "context_size": 1010000,

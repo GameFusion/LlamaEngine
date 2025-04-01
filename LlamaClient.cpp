@@ -152,7 +152,9 @@ void LlamaClient::LoadLibrary(const std::string& dllPath)
 
         // Load function pointers
         loadModelFunc = (LoadModelFunc)GetProcAddress(hDll, "loadModel");
+        loadClipModelFunc = (LoadClipModelFunc)GetProcAddress(hDll, "loadClipModel");
         generateResponseFunc = (GenerateResponseFunc)GetProcAddress(hDll, "generateResponse");
+        generateResponseWithImageFileFunc = (GenerateResponseWithImageFileFunc)GetProcAddress(hDll, "generateResponseWithImageFile");
         parseGGUFFunc = (ParseGGUFFunc)GetProcAddress(hDll, "parseGGUF");
         getContextInfoFunc = (GetContextInfoFunc)GetProcAddress(hDll, "getContextInfo");
 
@@ -183,7 +185,9 @@ void LlamaClient::LoadLibrary(const std::string& dllPath)
     }
 
     loadModelFunc = (LoadModelFunc)dlsym(hDll, "loadModel");
+    loadClipModelFunc = (LoadClipModelFunc)dlsym(hDll, "loadClipModel");
     generateResponseFunc = (GenerateResponseFunc)dlsym(hDll, "generateResponse");
+    generateResponseWithImageFileFunc = (GenerateResponseWithImageFileFunc)dlsym(hDll, "generateResponseWithImageFile");
     parseGGUFFunc = (ParseGGUFFunc)dlsym(hDll, "parseGGUF");
     getContextInfoFunc = (GetContextInfoFunc)dlsym(hDll, "getContextInfo");
 
@@ -260,6 +264,17 @@ bool LlamaClient::loadModel(const std::string& modelFile, struct ModelParameter*
     return modelLoaded;
 }
 
+bool LlamaClient::loadClipModel(const std::string& clipModelFile, void (*callback)(const char*, void *userData), void *userData) {
+
+    if (!loadClipModelFunc) {
+        return false;
+    }
+
+    clipModelLoaded = loadClipModelFunc(clipModelFile.c_str(), callback, userData);
+    clipModelPathFile = clipModelFile;
+    return clipModelLoaded;
+}
+
 /**
  * @brief Generates a response from the model.
  * @param prompt The input prompt.
@@ -275,6 +290,16 @@ bool LlamaClient::generateResponse(const std::string& prompt,
 {
     const int sessionId = 0;
     return generateResponseFunc(sessionId, prompt.c_str(), streamCallback, finishedCallback, userData);
+}
+
+bool LlamaClient::generateResponse(const std::string& prompt,
+                                   const std::string& imagePath,
+                                   void (*streamCallback)(const char* msg, void* user_data),
+                                   void (*finishedCallback)(const char* msg, void* user_data),
+                                   void *userData)
+{
+    const int sessionId = 0;
+    return generateResponseWithImageFileFunc(sessionId, prompt.c_str(), imagePath.c_str(), streamCallback, finishedCallback, userData);
 }
 
 /**

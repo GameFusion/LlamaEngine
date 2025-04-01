@@ -74,6 +74,9 @@ LlamaEngine_API bool loadModel(const char* backendType,
                                struct ModelParameter* params, size_t paramCount,
                                void (*callback)(const char*) = nullptr);
 
+LlamaEngine_API bool loadClipModel(const char* clipModelPath, void (*callback)(const char*, void *userData), void *userData);
+LlamaEngine_API bool isVisionModelLoaded();
+
 /**
  * @brief Creates a new session and returns a session UUID.
  *
@@ -121,6 +124,21 @@ LlamaEngine_API bool generateResponse(int sessionId,
                                       void (*finalCallback)(const char*, void* userData),
                                       void* userData);
 
+// Vision capabilities
+LlamaEngine_API bool generateResponseWithImageFile(int sessionID, const char* prompt,
+                                                   const char* imagePath,
+                                                   void (*streamCallback)(const char*, void* userData),
+                                                   void (*finalCallback)(const char*, void* userData),
+                                                   void* userData);
+
+LlamaEngine_API bool generateResponseWithImagePixels(int sessionID,
+                                                     const char* prompt,
+                                                     const unsigned char* rgbPixels,
+                                                     int width, int height,
+                                                     void (*streamCallback)(const char*, void* userData),
+                                                     void (*finalCallback)(const char*, void* userData),
+                                                     void* userData);
+
 LlamaEngine_API const char* getLastResponse(); // Retrieve the latest full response
 
 LlamaEngine_API void getContextInfo(void (*callback)(const char* info, void *userData), void* userData = nullptr); // Retrieve context stats and descriptive info
@@ -140,6 +158,8 @@ LlamaEngine_API char* parseGGUF(const char* filepath,
                                 GGUFAttributeCallback callback,
                                 void (*messageCallback)(const char* message),
                                 void* user_data = nullptr);
+
+
 }
 
 #endif // LlamaEngine_h

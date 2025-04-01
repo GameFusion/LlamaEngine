@@ -27,7 +27,9 @@ LlamaEngine_API bool loadModel(const char* modelPath,
         std::string message = "Loading model already loaded\n";
         if (callback)
             callback(message.c_str());
-        return true;
+        //return true;
+        delete runtimeContext;
+        runtimeContext = nullptr;
     }
 
     std::string message = "Loading model: " + std::string(modelPath);
@@ -96,6 +98,39 @@ LlamaEngine_API bool loadModel(const char* modelPath,
 }
 
 /**
+ * Loads a CLIP model for image processing.
+ *
+ * @param clipModelPath Path to the CLIP model file.
+ * @param callback Function pointer for logging messages.
+ * @return True if the model is successfully loaded, false otherwise.
+ */
+LlamaEngine_API bool loadClipModel(const char* clipModelPath, void (*callback)(const char*, void *userData), void *userData) {
+    if (!runtimeContext) {
+        if (callback)
+            callback("Error: Runtime context is not initialized. Load model first.", userData);
+        return false;
+    }
+
+    std::string message = "Loading CLIP model: " + std::string(clipModelPath);
+    if (callback)
+        callback(message.c_str(), userData);
+
+    return runtimeContext->loadClipModel(clipModelPath, callback, userData);
+}
+
+/**
+ * Checks if a vision model (CLIP) is loaded.
+ *
+ * @return True if the vision model is loaded, false otherwise.
+ */
+LlamaEngine_API bool isVisionModelLoaded() {
+    if (!runtimeContext) {
+        return false;
+    }
+    return runtimeContext->isVisionModelLoaded();
+}
+
+/**
  * @brief Creates a new session and returns a session UUID.
  *
  * @return A dynamically allocated UUID string. Caller must free the memory.
@@ -161,6 +196,194 @@ LlamaEngine_API bool generateResponse(int sessionID,
 }
 
 /**
+ * @brief Generates a response for the specified session using the given prompt and image file.
+ *
+ * This function allows multimodal generation by processing both text and image inputs.
+ * The image is loaded from a file, processed through the CLIP model, and embedded
+ * into the prompt context.
+ *
+ * @param sessionID The ID of the session to use for generating the response.
+ * @param prompt Input prompt string (can be empty).
+ * @param imagePath Path to the image file.
+ * @param streamCallback Function pointer to receive the response in token chunks.
+ * @param finalCallback Function pointer to receive the full final response (optional).
+ * @param userData Custom user data passed to both callbacks.
+ * @return True if the response is generated successfully, false otherwise.
+ */
+LlamaEngine_API bool generateResponseWithImageFile(int sessionID,
+                                                   const char* prompt,
+                                                   const char* imagePath,
+                                                   void (*streamCallback)(const char*, void* userData),
+                                                   void (*finalCallback)(const char*, void* userData),
+                                                   void* userData) {
+    // Add debug print to verify function entry
+    fprintf(stderr, "Entering generateResponseWithImageFile\n");
+
+    if (!runtimeContext) {
+        fprintf(stderr, "Error: Runtime context is null\n");
+        if (streamCallback)
+            streamCallback("Error: Runtime context is not initialized.", userData);
+        return false;
+    }
+
+    fprintf(stderr, "Checking vision model\n");
+
+    // Check if vision model is loaded
+    bool visionLoaded = false;
+    try {
+        visionLoaded = runtimeContext->isVisionModelLoaded();
+    } catch (const std::exception& e) {
+        fprintf(stderr, "Exception in isVisionModelLoaded: %s\n", e.what());
+        if (streamCallback)
+            streamCallback("Error: Exception checking vision model.", userData);
+        return false;
+    } catch (...) {
+        fprintf(stderr, "Unknown exception in isVisionModelLoaded\n");
+        if (streamCallback)
+            streamCallback("Error: Unknown exception checking vision model.", userData);
+        return false;
+    }
+
+    if (!visionLoaded) {
+        fprintf(stderr, "Vision model not loaded\n");
+        if (streamCallback)
+            streamCallback("Error: Vision model (CLIP) is not loaded.", userData);
+        return false;
+    }
+
+    // Convert prompt and image path to std::string
+    std::string promptStr = prompt ? prompt : "";
+    std::string imagePathStr = imagePath ? imagePath : "";
+
+    fprintf(stderr, "Prompt: %s\n", promptStr.c_str());
+    fprintf(stderr, "Image path: %s\n", imagePathStr.c_str());
+
+    if (imagePathStr.empty()) {
+        fprintf(stderr, "Empty image path\n");
+        if (streamCallback)
+            streamCallback("Error: Invalid image path.", userData);
+        return false;
+    }
+
+    // Check if file exists
+    FILE* testFile = fopen(imagePathStr.c_str(), "rb");
+    if (!testFile) {
+        fprintf(stderr, "Image file not found: %s\n", imagePathStr.c_str());
+        if (streamCallback)
+            streamCallback("Error: Image file not found.", userData);
+        return false;
+    }
+    fclose(testFile);
+
+    fprintf(stderr, "Calling runtime->generateResponseWithImageFile\n");
+
+    // Call the method with try-catch to handle exceptions
+    bool ret = false;
+    try {
+        ret = runtimeContext->generateResponseWithImageFile(
+            sessionID,
+            promptStr,
+            imagePathStr,
+            streamCallback,
+            userData
+            );
+    } catch (const std::exception& e) {
+        fprintf(stderr, "Exception in generateResponseWithImageFile: %s\n", e.what());
+        if (streamCallback)
+            streamCallback("Error: Exception generating response.", userData);
+        return false;
+    } catch (...) {
+        fprintf(stderr, "Unknown exception in generateResponseWithImageFile\n");
+        if (streamCallback)
+            streamCallback("Error: Unknown exception generating response.", userData);
+        return false;
+    }
+
+    fprintf(stderr, "Result: %d\n", ret);
+
+    if (ret && finalCallback) {
+        // Get response with try-catch
+        try {
+            const std::string response = runtimeContext->getResponse(sessionID);
+            finalCallback(response.c_str(), userData);
+        } catch (const std::exception& e) {
+            fprintf(stderr, "Exception in getResponse: %s\n", e.what());
+            if (streamCallback)
+                streamCallback("Error: Exception getting final response.", userData);
+            return false;
+        } catch (...) {
+            fprintf(stderr, "Unknown exception in getResponse\n");
+            if (streamCallback)
+                streamCallback("Error: Unknown exception getting final response.", userData);
+            return false;
+        }
+    }
+
+    return ret;
+}
+
+/**
+ * @brief Generates a response for the specified session using the given prompt and image pixels.
+ *
+ * This function allows multimodal generation using raw pixel data. The pixels are processed
+ * through the CLIP model and embedded into the prompt context.
+ *
+ * @param sessionID The ID of the session to use for generating the response.
+ * @param prompt Input prompt string (can be empty).
+ * @param rgbPixels The RGB pixel data (interleaved R,G,B values).
+ * @param width Image width in pixels.
+ * @param height Image height in pixels.
+ * @param streamCallback Function pointer to receive the response in token chunks.
+ * @param finalCallback Function pointer to receive the full final response (optional).
+ * @param userData Custom user data passed to both callbacks.
+ * @return True if the response is generated successfully, false otherwise.
+ */
+LlamaEngine_API bool generateResponseWithImagePixels(int sessionID,
+                                                     const char* prompt,
+                                                     const unsigned char* rgbPixels,
+                                                     int width, int height,
+                                                     void (*streamCallback)(const char*, void* userData),
+                                                     void (*finalCallback)(const char*, void* userData),
+                                                     void* userData) {
+    if (!runtimeContext) {
+        if (streamCallback)
+            streamCallback("Error: Runtime context is not initialized.", userData);
+        return false;
+    }
+
+    if (!runtimeContext->isVisionModelLoaded()) {
+        if (streamCallback)
+            streamCallback("Error: Vision model (CLIP) is not loaded.", userData);
+        return false;
+    }
+
+    if (!rgbPixels || width <= 0 || height <= 0) {
+        if (streamCallback)
+            streamCallback("Error: Invalid image data or dimensions.", userData);
+        return false;
+    }
+
+    // Convert prompt to std::string
+    std::string promptStr = prompt ? prompt : "";
+
+    bool ret = runtimeContext->generateResponseWithImagePixels(
+        sessionID,
+        promptStr,
+        rgbPixels,
+        width,
+        height,
+        streamCallback,
+        userData
+        );
+
+    if (ret && finalCallback) {
+        finalCallback(runtimeContext->getResponse(sessionID).c_str(), userData);
+    }
+
+    return ret;
+}
+
+/**
  * Get the latest complete response.
  * @return Returns the complete latest generated response.
  */
@@ -221,3 +444,4 @@ LlamaEngine_API char* parseGGUF(const char* filepath, GGUFAttributeCallback call
     // Return the model name as a char*
     return const_cast<char*>(metadata.name);
 }
+

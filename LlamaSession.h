@@ -89,6 +89,8 @@ public:
     std::vector<char> formatted;              ///< Formatted message buffer.
     std::string response;                     ///< Last generated response.
 
+    llama_pos n_past = 0; ///< Position counter for token generation, tracks how many tokens have been processed so far
+
     /**
      * @brief Creates a new LlamaSession with a unique session ID.
      *
@@ -97,8 +99,10 @@ public:
      * @param sampler Pointer to the Llama sampler.
      */
     LlamaSession(std::string name, llama_context* context, llama_sampler *sampler)
-        : sessionName(std::move(name)), timestamp(time(nullptr)), ctx(context), smpl(sampler)
+        : sessionName(std::move(name)), timestamp(time(nullptr)), ctx(context), smpl(sampler), n_past(0)
     {
+        // Initialize formatted buffer with reasonable size
+        formatted.resize(65536);
 
 #ifdef WIN32
         UUID uuid;
@@ -156,6 +160,9 @@ public:
 
         //Explicitly Clear the KV Cache
         llama_kv_cache_clear(ctx);
+
+        // Reset the position counter
+        n_past = 0;
     }
 
     /**
@@ -174,6 +181,37 @@ public:
         }
 #endif
         timestamp = time(nullptr); // Update session timestamp
+    }
+
+    /**
+     * @brief Resets the position counter without clearing history.
+     *
+     * This can be useful when you want to keep the chat messages
+     * but reset the token context (e.g., when switching to a different task).
+     */
+    void resetPosition() {
+        n_past = 0;
+        if (ctx) {
+            llama_kv_cache_clear(ctx);
+        }
+    }
+
+    /**
+     * @brief Returns the current number of tokens in context.
+     *
+     * @return The number of tokens that have been processed in this session.
+     */
+    llama_pos getTokenCount() const {
+        return n_past;
+    }
+
+    /**
+     * @brief Updates the token position counter.
+     *
+     * @param increment The number of tokens to add to the position counter.
+     */
+    void advancePosition(llama_pos increment) {
+        n_past += increment;
     }
 };
 

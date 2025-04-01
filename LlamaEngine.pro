@@ -38,9 +38,12 @@ DEFINES += LlamaEngine_EXPORTS
 
 INCLUDEPATH += $$PWD/include
 
-SOURCES += LlamaEngine.cpp LlamaRuntime.cpp
+SOURCES += LlamaEngine.cpp LlamaRuntime.cpp LlamaRuntimeVision.cpp
 HEADERS += LlamaEngine.h LlamaRuntime.h
 HEADERS += LlamaSession.h PromptResponse.h
+
+SOURCES += llama_version.cpp
+
 
 # macOS-specific settings
 mac {
@@ -60,6 +63,14 @@ mac {
     LIBS += -lggml-metal
 
     INCLUDEPATH += /opt/local/include
+    INCLUDEPATH += ../../../../ExternalCode/llama.cpp/examples/llava
+    INCLUDEPATH += ../../../../ExternalCode/llama.cpp/common
+    SOURCES += ../../../../ExternalCode/llama.cpp/examples/llava/clip.cpp
+    SOURCES += ../../../../ExternalCode/llama.cpp/common/common.cpp
+    SOURCES += ../../../../ExternalCode/llama.cpp/common/sampling.cpp
+    SOURCES += ../../../../ExternalCode/llama.cpp/common/console.cpp
+    SOURCES += ../../../../ExternalCode/llama.cpp/common/log.cpp
+    HEADERS += llama_version.h
 
     # Set the macOS library name prefix to an empty string
     #QMAKE_LIB_PREFIX =  # This removes the default 'lib' prefix on macOS

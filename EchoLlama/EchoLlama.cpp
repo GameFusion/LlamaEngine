@@ -24,6 +24,7 @@
 #include <QJsonArray>
 #include <QComboBox>
 #include <QAbstractItemView>
+#include <QHBoxLayout>
 
 #include "llama_version.h"
 
@@ -153,6 +154,9 @@ void EchoLlama::setupUI() {
     // Model selection dropdown
     modelSelectionComboBox = new QComboBox(this);
 
+
+
+
     // Top bar layout
     QHBoxLayout* topBarLayout = new QHBoxLayout();
 
@@ -188,6 +192,22 @@ void EchoLlama::setupUI() {
     sendButton->setToolTip("Send");
     sendButton->setCursor(Qt::PointingHandCursor);  // Make it look clickable
 
+
+    // Create a horizontal layout for the send button
+    QHBoxLayout* buttonLayout = new QHBoxLayout();
+
+    // Setup attachment button
+    setupAttachmentButton();
+
+    // Add attachment button and send button to layout
+    buttonLayout->addWidget(attachButton, 0, Qt::AlignRight);
+    buttonLayout->addWidget(sendButton, 0, Qt::AlignRight);
+
+    // Spacer to offset the button by -10 pixels to the left (after the button)
+    QSpacerItem* spacer = new QSpacerItem(10, 0, QSizePolicy::Fixed, QSizePolicy::Minimum);
+    buttonLayout->addItem(spacer); // This adds the spacer to the right of the button
+
+
     // Set style for inputGroup
     inputGroup = new QWidget(this);
     inputGroup->setFixedHeight(75);
@@ -206,12 +226,12 @@ void EchoLlama::setupUI() {
     QVBoxLayout* inputLayout = new QVBoxLayout(inputGroup);
     inputLayout->addWidget(promptInput);
     // Create a horizontal layout for the send button
-    QHBoxLayout* buttonLayout = new QHBoxLayout();
-    buttonLayout->addWidget(sendButton, 0, Qt::AlignRight);
+    //QHBoxLayout* buttonLayout = new QHBoxLayout();
+    //buttonLayout->addLayout(buttonLayout, 0, Qt::AlignRight);
 
     // Spacer to offset the button by -10 pixels to the left (after the button)
-    QSpacerItem* spacer = new QSpacerItem(10, 0, QSizePolicy::Fixed, QSizePolicy::Minimum);
-    buttonLayout->addItem(spacer); // This adds the spacer to the right of the button
+    //QSpacerItem* spacer = new QSpacerItem(10, 0, QSizePolicy::Fixed, QSizePolicy::Minimum);
+    //buttonLayout->addItem(spacer); // This adds the spacer to the right of the button
 
     // Add the button layout to the main layout
     inputLayout->addLayout(buttonLayout);
@@ -333,6 +353,119 @@ QJsonObject EchoLlama::getSelectedModelObject() {
     return modelObject;
 }
 
+
+void displayImageInChat(QTextEdit* chatDisplay, const QString& imagePath) {
+    // Load image from path
+    QPixmap originalImage(imagePath);
+
+    if (originalImage.isNull()) {
+        // Handle image loading failure
+        chatDisplay->append("Failed to load image: " + imagePath);
+        return;
+    }
+
+    // Resize to thumbnail size (e.g., 100x100 pixels)
+    QPixmap thumbnail = originalImage.scaled(
+        QSize(100, 100),      // Target size
+        Qt::KeepAspectRatio,  // Keep the aspect ratio
+        Qt::SmoothTransformation  // Use smooth scaling
+        );
+
+    // Get document and cursor for insertion
+    QTextDocument* document = chatDisplay->document();
+    QTextCursor cursor(document);
+    cursor.movePosition(QTextCursor::End);
+
+    // Add the image to the document's resource collection
+    document->addResource(
+        QTextDocument::ImageResource,
+        QUrl("file:" + imagePath),
+        QVariant(thumbnail)
+        );
+
+    // Insert HTML that references the image
+    cursor.insertHtml(QString("<img src='file:%1' />").arg(imagePath));
+
+    // Add a line break after the image
+    cursor.insertBlock();
+
+    // Ensure the view scrolls to show the newly added content
+    chatDisplay->ensureCursorVisible();
+}
+
+#include <QTextEdit>
+#include <QString>
+#include <QTextDocument>
+#include <QTextCursor>
+#include <QImage>
+#include <QSize>
+#include <QTextImageFormat>
+#include <QTextBlockFormat>
+#include <QTextImageFormat>
+#include <random>
+
+void displayMiniatureInChat(QTextEdit* chatDisplay, const QString& imagePath) {
+    // Generate a random identifier
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    QString imageIdentifier = "miniature_" + QString::number(gen());
+
+    // Load and scale down the image
+    QImage image(imagePath);
+    if (image.isNull()) {
+        chatDisplay->append("Failed to load image: " + imagePath);
+        return;
+    }
+
+    // Scale the image to a small size (adjust as needed)
+    QImage scaledImage = image.scaled(
+        QSize(256, 256),  // Small thumbnail size
+        Qt::KeepAspectRatio,
+        Qt::SmoothTransformation
+        );
+
+    // Get document for insertion
+    QTextDocument* document = chatDisplay->document();
+
+    // Add the scaled image to the document's resource collection
+    document->addResource(
+        QTextDocument::ImageResource,
+        QUrl(imageIdentifier),
+        QVariant(scaledImage)
+        );
+
+    // Get cursor at the end of the document
+    QTextCursor cursor(document);
+    cursor.movePosition(QTextCursor::End);
+
+    // First, insert a new paragraph/block for the image
+    QTextBlockFormat blockFormat;
+    blockFormat.setAlignment(Qt::AlignLeft);  // Align to left margin
+    blockFormat.setTopMargin(5);              // Add space above
+    blockFormat.setBottomMargin(5);           // Add space below
+
+    // Apply the block format to start a new paragraph
+    cursor.insertBlock(blockFormat);
+
+    // Create image format with proper spacing
+    QTextImageFormat imageFormat;
+    imageFormat.setName(imageIdentifier);
+    imageFormat.setWidth(scaledImage.width());
+    imageFormat.setHeight(scaledImage.height());
+
+    // Add padding around the image
+    //imageFormat.setMargin(5);  // 5 pixels of margin all around
+
+    // Insert the image at cursor position (in the new paragraph)
+    cursor.insertImage(imageFormat);
+
+    // Insert another block after the image to ensure text starts in a new paragraph
+    cursor.insertBlock(blockFormat);
+
+    // Ensure the view scrolls to show the newly added content
+    chatDisplay->ensureCursorVisible();
+}
+
 bool EchoLlama::loadLlama() {
     qDebug() << "loadLlama (1)";
 
@@ -346,6 +479,7 @@ bool EchoLlama::loadLlama() {
         return false;
 
     QString downloadLink = modelObject["download_link"].toString();
+
 
     if(llamaClient && llamaClient->getModelFile() == downloadLink.toStdString())
         return true; // model already loaded
@@ -415,8 +549,29 @@ bool EchoLlama::loadLlama() {
         return false;
     }
 
-    systemPrompt = true;
-    generateResponse("Hello!");
+    if(modelObject.contains("mmproj")){
+        QString mmproj = modelObject["mmproj"].toString();
+
+        if(!mmproj.isEmpty())
+        {
+            QString clipModelPathFile = QString("%1/%2").arg(modelPath).arg(mmproj);
+            QTextEdit *chatDisplayPtr = (QTextEdit*)chatDisplay;  // Assuming chatDisplay is defined elsewhere
+                llamaClient->loadClipModel(clipModelPathFile.toUtf8().constData(), [](const char* message, void *userData){
+                    QTextEdit *display = (QTextEdit*)userData;
+                    display->append("Loading clip model: "+QString(message));
+                }, (void*)chatDisplay);
+        }
+
+        //displayMiniatureInChat(chatDisplay,  "/Users/andreascarlen/Documents/Screenshot 2024-03-22 at 12.09.51.png");
+        //QGuiApplication::processEvents();
+        //generateResponse("Hello, please describe this image!", "/Users/andreascarlen/Documents/Screenshot 2024-03-22 at 12.09.51.png");
+        generateResponse("Hello");
+    }
+    else{
+
+        systemPrompt = true;
+        generateResponse("Hello!");
+    }
     promptInput->setFocus();
 
     return true;
@@ -514,6 +669,23 @@ void EchoLlama::generateResponse(const QString& prompt) {
     );
 }
 
+void EchoLlama::generateResponse(const QString& prompt, const QString &imagePath) {
+    if (!llamaClient) {
+        chatDisplay->append("Unable to generate response, Llama client not loaded.");
+        return;
+    }
+
+    llamaClient->generateResponse(prompt.toUtf8().constData(), imagePath.toUtf8().constData(),
+                                  [](const char* msg, void* userData) {
+                                      ((EchoLlama*)userData)->responseCallback(msg, userData);
+                                  },
+                                  [](const char* msg, void* userData) {
+                                      ((EchoLlama*)userData)->finishedCallback(msg, userData);
+                                  },
+                                  this
+                                  );
+
+}
 
 void EchoLlama::finishedCallback(const char* msg, void* userData) {
     // Optional: Handle any cleanup after response is finished
@@ -543,11 +715,28 @@ void EchoLlama::handleTextChange() {
 }
 
 void EchoLlama::sendClicked() {
-    // Handle the send button click
-    processPrompt(promptInput->toPlainText());
+    QString promptText = promptInput->toPlainText();
+
+    if (!attachedImagePath.isEmpty()) {
+        // Display miniature in chat
+        //displayMiniatureInChat(chatDisplay, attachedImagePath);
+
+        // Process prompt with image
+        generateResponse(promptText, attachedImagePath);
+
+        // Reset attachment state
+        attachedImagePath = "";
+        promptInput->setPlaceholderText("Ask Anything");
+        attachButton->setStyleSheet(""); // Reset button style
+    } else {
+        // Normal text-only prompt
+        processPrompt(promptText);
+    }
+
     QGuiApplication::processEvents();
     promptInput->clear();
 }
+
 
 void applyModernScrollbarStyle(QTextEdit* textEdit) {
     // Get the vertical scrollbar specifically
@@ -900,5 +1089,47 @@ void EchoLlama::onDownloadFinished(const QString &url)
 
             }
         }
+    }
+}
+
+void EchoLlama::setupAttachmentButton() {
+    // Configure the attachment button using Font Awesome
+    QFont fa = FontAwesome::getFontAwesome();
+    fa.setPointSize(20);
+
+    attachButton = new QToolButton(this);
+    attachButton->setFont(fa);
+    attachButton->setText(QChar(0xf030));  // Font Awesome camera icon (or use 0xf0c6 for paperclip)
+    attachButton->setToolTip("Attach an image");
+    attachButton->setCursor(Qt::PointingHandCursor);
+
+    // Connect the button to a slot that handles image selection
+    connect(attachButton, &QToolButton::clicked, this, &EchoLlama::promptForImageFile);
+}
+
+#include <QFileDialog>
+
+void EchoLlama::promptForImageFile() {
+    // Open a file dialog to select an image
+    QString imagePath = QFileDialog::getOpenFileName(
+        this,
+        "Select Image File",
+        QDir::homePath(),
+        "Image Files (*.png *.jpg *.jpeg *.bmp *.gif *.webp)"
+        );
+
+    if (!imagePath.isEmpty()) {
+        attachedImagePath = imagePath;
+
+
+
+        // Let the user know an image is attached
+        promptInput->setPlaceholderText("Image attached, add a message...");
+
+        // You could also add visual feedback that an image is attached
+        attachButton->setStyleSheet("QToolButton { color: #00AEEF; }");
+
+        displayMiniatureInChat(chatDisplay, imagePath);
+        QGuiApplication::processEvents();
     }
 }

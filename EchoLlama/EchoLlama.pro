@@ -22,6 +22,7 @@ HEADERS += \
     FontAwesome.h \
     DownloadManager.h \
     NetworkUtils.h \
+    ResponseWorker.h \
     ..//LlamaClient.h
 
 # Include Paths

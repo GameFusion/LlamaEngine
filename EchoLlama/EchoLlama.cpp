@@ -25,8 +25,12 @@
 #include <QComboBox>
 #include <QAbstractItemView>
 #include <QHBoxLayout>
+#include <QThread>
+#include <QMimeData>
 
 #include "llama_version.h"
+
+#include "ResponseWorker.h"
 
 bool systemPrompt=false;
 
@@ -57,6 +61,14 @@ EchoLlama::EchoLlama(QWidget *parent)
 
     // Initialize Llama after a short delay
     QTimer::singleShot(200, this, &EchoLlama::initializeLlama);
+
+    // Setup Animation Processing Timer
+    animationTimer = new QTimer(this);
+    connect(animationTimer, &QTimer::timeout, this, &EchoLlama::updateProcessingAnimation);
+
+    // Connect signals to UI update slots
+    connect(this, &EchoLlama::responseReceived, this, &EchoLlama::responseCallback, Qt::QueuedConnection);
+    connect(this, &EchoLlama::responseFinished, this, &EchoLlama::finishedCallback, Qt::QueuedConnection);
 }
 
 EchoLlama::~EchoLlama() {
@@ -246,6 +258,15 @@ void EchoLlama::setupUI() {
     layout->addWidget(progressBar);
     layout->addWidget(chatDisplay);
     layout->addWidget(inputGroup);
+
+    // Enable drag and drop
+    setAcceptDrops(true);
+
+    // Also enable drop on the input widget to make it more intuitive
+    promptInput->setAcceptDrops(true);
+
+    // If you want to enable drop on the chat display too:
+    chatDisplay->setAcceptDrops(true);
 }
 
 void EchoLlama::setupConnections() {
@@ -613,17 +634,67 @@ void EchoLlama::processPrompt(const QString& prompt) {
 
     QGuiApplication::processEvents();
 
-    if (!attachedImagePath.isEmpty())
-        // Process prompt with image
-        generateResponse(prompt, attachedImagePath);
-    else
-        generateResponse(prompt);
+    // Start the loading animation
+    startProcessingAnimation();
 
-    QGuiApplication::processEvents();
+    // Create worker and thread
+    QThread* thread = new QThread();
+    ResponseWorker* worker = new ResponseWorker(this);
+    worker->moveToThread(thread);
+
+    // Connect signals and slots
+    connect(thread, &QThread::started, [=]() {
+        if (!attachedImagePath.isEmpty()) {
+            worker->processWithImage(prompt, attachedImagePath);
+        } else {
+            worker->processWithoutImage(prompt);
+        }
+    });
+
+    connect(worker, &ResponseWorker::finished, [=]() {
+        stopProcessingAnimation();
+        thread->quit();
+        thread->wait();
+        worker->deleteLater();
+        thread->deleteLater();
+    });
+
+    // Start the thread
+    thread->start();
+
+    // Clear prompt input
     promptInput->clear();
 }
 
-void EchoLlama::responseCallback(const char* msg, void* userData) {
+void EchoLlama::startProcessingAnimation() {
+    isAnimating = true;
+    animationFrame = 0;
+    promptInput->setReadOnly(true);
+    animationTimer->start(150);
+    updateProcessingAnimation();
+}
+
+void EchoLlama::stopProcessingAnimation() {
+    isAnimating = false;
+    animationTimer->stop();
+    promptInput->clear();
+    promptInput->setReadOnly(false);
+}
+
+void EchoLlama::updateProcessingAnimation() {
+    if (!isAnimating) return;
+
+    const QString frames[] = {
+        "Thinking ⠋", "Thinking ⠙", "Thinking ⠹",
+        "Thinking ⠸", "Thinking ⠼", "Thinking ⠴",
+        "Thinking ⠦", "Thinking ⠧"
+    };
+
+    promptInput->setPlainText(frames[animationFrame % TOTAL_FRAMES]);
+    animationFrame = (animationFrame + 1) % TOTAL_FRAMES;
+}
+
+void EchoLlama::responseCallback(const QString& msg) {
     // Save current scrollbar position and check if it was at the bottom
     QScrollBar* scrollBar = chatDisplay->verticalScrollBar();
     bool wasAtBottom = scrollBar->value() == scrollBar->maximum();
@@ -668,13 +739,26 @@ void EchoLlama::generateResponse(const QString& prompt) {
         return;
     }
 
+    // Create a QMetaObject::invokeMethod wrapper for the signal emission
     llamaClient->generateResponse(prompt.toUtf8().constData(),
-          [](const char* msg, void* userData) {
-              ((EchoLlama*)userData)->responseCallback(msg, userData);
-          },
-          [](const char* msg, void* userData) {
-              ((EchoLlama*)userData)->finishedCallback(msg, userData);
-          },
+        [](const char* msg, void* userData) {
+          EchoLlama* self = static_cast<EchoLlama*>(userData);
+          QString text = QString::fromUtf8(msg);
+
+          // Use QMetaObject::invokeMethod for thread-safe signal emission
+          QMetaObject::invokeMethod(self, "responseReceived",
+                                    Qt::QueuedConnection,
+                                    Q_ARG(QString, text));
+        },
+        [](const char* msg, void* userData) {
+          EchoLlama* self = static_cast<EchoLlama*>(userData);
+          QString text = QString::fromUtf8(msg);
+
+          // Use QMetaObject::invokeMethod for thread-safe signal emission
+          QMetaObject::invokeMethod(self, "responseFinished",
+                                    Qt::QueuedConnection,
+                                    Q_ARG(QString, text));
+        },
         this
     );
 }
@@ -686,18 +770,30 @@ void EchoLlama::generateResponse(const QString& prompt, const QString &imagePath
     }
 
     llamaClient->generateResponse(prompt.toUtf8().constData(), imagePath.toUtf8().constData(),
-                                  [](const char* msg, void* userData) {
-                                      ((EchoLlama*)userData)->responseCallback(msg, userData);
-                                  },
-                                  [](const char* msg, void* userData) {
-                                      ((EchoLlama*)userData)->finishedCallback(msg, userData);
-                                  },
-                                  this
-                                  );
+        [](const char* msg, void* userData) {
+          EchoLlama* self = static_cast<EchoLlama*>(userData);
+          QString text = QString::fromUtf8(msg);
 
+          // Use QMetaObject::invokeMethod for thread-safe signal emission
+          QMetaObject::invokeMethod(self, "responseReceived",
+                                    Qt::QueuedConnection,
+                                    Q_ARG(QString, text));
+        },
+        [](const char* msg, void* userData) {
+          EchoLlama* self = static_cast<EchoLlama*>(userData);
+          QString text = QString::fromUtf8(msg);
+
+          // Use QMetaObject::invokeMethod for thread-safe signal emission
+          QMetaObject::invokeMethod(self, "responseFinished",
+                                    Qt::QueuedConnection,
+                                    Q_ARG(QString, text));
+        },
+        this
+    );
 }
 
-void EchoLlama::finishedCallback(const char* msg, void* userData) {
+
+void EchoLlama::finishedCallback(const QString& msg) {
     // Optional: Handle any cleanup after response is finished
     if(systemPrompt){
         // system promps are generated directly without a user question directly by calling generateResponse vs processPromt
@@ -1128,4 +1224,76 @@ void EchoLlama::promptForImageFile() {
         displayMiniatureInChat(chatDisplay, imagePath);
         QGuiApplication::processEvents();
     }
+}
+
+void EchoLlama::dragEnterEvent(QDragEnterEvent *event) {
+    // Check if the drag contains image files
+    if (event->mimeData()->hasUrls()) {
+        // Check the first URL to see if it's an image
+        QList<QUrl> urls = event->mimeData()->urls();
+        if (!urls.isEmpty() && isImageFile(urls.first().toLocalFile())) {
+            event->acceptProposedAction();
+            return;
+        }
+    }
+
+    // If we get here, reject the drag
+    event->ignore();
+}
+
+void EchoLlama::dragMoveEvent(QDragMoveEvent *event) {
+    // Accept the drag move if we accepted the enter event
+    if (event->proposedAction() & Qt::CopyAction) {
+        event->acceptProposedAction();
+    } else {
+        event->ignore();
+    }
+}
+
+void EchoLlama::dropEvent(QDropEvent *event) {
+    const QMimeData *mimeData = event->mimeData();
+
+    // Check if the drop contains URLs (files)
+    if (mimeData->hasUrls()) {
+        QList<QUrl> urlList = mimeData->urls();
+
+        // Process only the first file if it's an image
+        if (!urlList.isEmpty()) {
+            QString filePath = urlList.first().toLocalFile();
+            if (isImageFile(filePath)) {
+                // Handle the dropped image
+                handleDroppedImage(filePath);
+                event->acceptProposedAction();
+                return;
+            }
+        }
+    }
+
+    event->ignore();
+}
+
+bool EchoLlama::isImageFile(const QString &filePath) {
+    // List of common image file extensions
+    QStringList imageExtensions = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"};
+
+    // Check if the file has one of the image extensions
+    for (const QString &ext : imageExtensions) {
+        if (filePath.toLower().endsWith(ext)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void EchoLlama::handleDroppedImage(const QString &imagePath) {
+    // This reuses your existing code for handling a selected image
+    attachedImagePath = imagePath;
+    promptInput->setPlaceholderText("Prompt the image...");
+    attachButton->setStyleSheet("QToolButton { color: #00AEEF; }");
+    displayMiniatureInChat(chatDisplay, imagePath);
+    QGuiApplication::processEvents();
+
+    // Optionally, set focus to the prompt input after dropping an image
+    promptInput->setFocus();
 }

@@ -4,6 +4,8 @@
 #include <QWidget>
 #include <QJsonArray>
 
+
+
 class LlamaClient;
 class QTextEdit;
 class QPlainTextEdit;
@@ -77,7 +79,41 @@ private slots:
     void updateDownloadProgress(const QString &url, qint64 starOffset, qint64 bytesReceived, qint64 bytesTotal);
     void onDownloadFinished(const QString &url);
 
+    /**
+     * @brief Callback function to handle incoming response messages.
+     * @param msg The message content.
+     * @param userData User data pointer (points to this EchoLlama instance).
+     */
+public slots:
+    void responseCallback(const QString& msg);
+
+    /**
+     * @brief Callback function to handle the completion of a response generation.
+     * @param msg The message content.
+     * @param userData User data pointer (points to this EchoLlama instance).
+     */
+    void finishedCallback(const QString& msg);
+
+signals:
+    void responseReceived(const QString& text);
+    void responseFinished(const QString& text);
+
+
+protected:
+    // Override drag and drop events
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
+
 private:
+    // Helper method to check if a file is a valid image
+    bool isImageFile(const QString &filePath);
+
+    // Method to handle dropped image files
+    void handleDroppedImage(const QString &imagePath);
+
+private:
+
     /**
      * @brief Text edit widget for displaying chat messages.
      */
@@ -119,19 +155,7 @@ private:
 
     void setupConnections();
 
-    /**
-     * @brief Callback function to handle incoming response messages.
-     * @param msg The message content.
-     * @param userData User data pointer (points to this EchoLlama instance).
-     */
-    void responseCallback(const char* msg, void* userData);
 
-    /**
-     * @brief Callback function to handle the completion of a response generation.
-     * @param msg The message content.
-     * @param userData User data pointer (points to this EchoLlama instance).
-     */
-    void finishedCallback(const char* msg, void* userData);
 
     /**
      * @brief Loads the Llama model with specified parameters.
@@ -152,6 +176,18 @@ private:
     QJsonObject getSelectedModelObject();
 
     void updateProgress(qint64 starOffset, qint64 bytesReceived, qint64 totalBytes);
+
+    /// processing animation
+    void startProcessingAnimation();
+    void stopProcessingAnimation();
+    void updateProcessingAnimation();
+
+    QTimer* animationTimer;
+    int animationFrame = 0;
+    const int TOTAL_FRAMES = 8;
+    bool isAnimating = false;
+
+
 };
 
 #endif // EchoLlama_h

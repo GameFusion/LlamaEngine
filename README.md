@@ -8,6 +8,61 @@ This project is a module spin-off from [**StarGit**](https://stargit.com), now a
 
 ---
 
+## **New: Multimodal Support with Gemma 3**
+
+The `feature/gemma3-multimodal` branch now brings new capabilities to LlamaEngine and EchoLlama:
+
+### **Image Analysis & Visual Understanding**
+
+EchoLlama now supports multimodal interactions with vision-capable models like **Gemma 3**, enabling:
+
+- **Image-based prompting**: Ask questions about images you upload
+- **Visual analysis**: Get detailed descriptions and insights about visual content
+- **Context-aware responses**: Follow-up questions maintain visual context
+
+![EchoLlama with Multimodal Support](docs/images/Screenshot%202025-04-01%20at%2022.20.06.png)
+![EchoLlama with Multimodal Support](docs/images/Screenshot%202025-04-01%20at%2021.48.54.png)
+
+### **Enhanced User Experience**
+
+We've improved the interaction flow with new features:
+
+- **Drag & drop support**: Simply drag images directly into the chat interface
+- **Attachment button**: Click to select images from your file system
+- **Visual indicators**: Clear feedback when images are attached and being processed
+
+### **Optimized Performance with Threading**
+
+Processing images and generating responses now happens in background threads:
+
+- **Responsive UI**: The interface remains fully interactive during processing
+- **Progress indicators**: Visual feedback while the model analyzes images
+- **Efficient resource usage**: Better utilization of system resources
+
+### **Getting Started with Multimodal Features**
+
+To use these new features:
+
+1. Checkout the `feature/gemma3-multimodal` branch
+2. Build LlamaEngine with multimodal support
+3. Download a vision-capable model (like Gemma 3)
+4. Download the corresponding CLIP projector for the model
+5. Launch EchoLlama and start analyzing images
+
+```bash
+git checkout feature/gemma3-multimodal
+# Build as usual following the build instructions
+```
+
+### **Supported Models**
+
+The multimodal implementation currently works best with:
+
+- **Gemma 3** vision models (recommended)
+- Models using the standard CLIP projector format
+
+---
+
 ## **EchoLlama Client**
 
 **EchoLlama*, the demo client for LlamaEngine, running on Windows:

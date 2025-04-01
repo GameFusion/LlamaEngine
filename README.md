@@ -22,7 +22,7 @@ The `feature/gemma3-multimodal` branch is introducing new experimental capabilit
 You can explore this experimental feature by checking out:
 ```bash
 git checkout feature/gemma3-multimodal
-
+```
 
 ---
 

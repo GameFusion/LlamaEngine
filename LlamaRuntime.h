@@ -14,6 +14,7 @@
 #include "GGUFMetadata.h"
 
 class LlamaSession;
+class LlamaRuntimeVision;
 
 /**
  * @class LlamaRuntime
@@ -260,7 +261,7 @@ private:
     // -------------------------------------------------------------------------------------
 
     llama_model *model = nullptr;  ///< Pointer to the loaded model.
-    clip_ctx *clip_model = nullptr;
+    //clip_ctx *clip_model = nullptr;
     const llama_vocab *vocab = nullptr; ///< Pointer to model vocabulary.
 
     /**
@@ -318,7 +319,9 @@ private:
     LogCallback logCallback;
 
 
-    std::string common_token_to_piece(llama_token token);
+    //std::string common_token_to_piece(llama_token token);
+
+    LlamaRuntimeVision *vision = nullptr;
 };
 
 #endif // LlamaRuntime_h

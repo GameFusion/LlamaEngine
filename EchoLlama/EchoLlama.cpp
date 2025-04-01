@@ -199,13 +199,16 @@ void EchoLlama::setupUI() {
     // Setup attachment button
     setupAttachmentButton();
 
+    // Spacer to offset the button by -10 pixels to the left (after the button)
+    //QSpacerItem* spacer = new QSpacerItem(10, 0, QSizePolicy::Fixed, QSizePolicy::Minimum);
+    //buttonLayout->addItem(spacer); // This adds the spacer to the right of the button
+
+    buttonLayout->addStretch(1);
+
     // Add attachment button and send button to layout
     buttonLayout->addWidget(attachButton, 0, Qt::AlignRight);
     buttonLayout->addWidget(sendButton, 0, Qt::AlignRight);
 
-    // Spacer to offset the button by -10 pixels to the left (after the button)
-    QSpacerItem* spacer = new QSpacerItem(10, 0, QSizePolicy::Fixed, QSizePolicy::Minimum);
-    buttonLayout->addItem(spacer); // This adds the spacer to the right of the button
 
 
     // Set style for inputGroup
@@ -610,7 +613,14 @@ void EchoLlama::processPrompt(const QString& prompt) {
 
     QGuiApplication::processEvents();
 
-    generateResponse(prompt);
+    if (!attachedImagePath.isEmpty())
+        // Process prompt with image
+        generateResponse(prompt, attachedImagePath);
+    else
+        generateResponse(prompt);
+
+    QGuiApplication::processEvents();
+    promptInput->clear();
 }
 
 void EchoLlama::responseCallback(const char* msg, void* userData) {
@@ -706,10 +716,8 @@ void EchoLlama::handleTextChange() {
     if (text.endsWith("\n")) {
         Qt::KeyboardModifiers modifiers = QGuiApplication::keyboardModifiers();
         if (!(modifiers & Qt::ShiftModifier)) {
-            text.chop(1);
+            //text.chop(1);
             processPrompt(text);
-            QGuiApplication::processEvents();
-            promptInput->clear();
         }
     }
 }
@@ -717,24 +725,8 @@ void EchoLlama::handleTextChange() {
 void EchoLlama::sendClicked() {
     QString promptText = promptInput->toPlainText();
 
-    if (!attachedImagePath.isEmpty()) {
-        // Display miniature in chat
-        //displayMiniatureInChat(chatDisplay, attachedImagePath);
-
-        // Process prompt with image
-        generateResponse(promptText, attachedImagePath);
-
-        // Reset attachment state
-        attachedImagePath = "";
-        promptInput->setPlaceholderText("Ask Anything");
-        attachButton->setStyleSheet(""); // Reset button style
-    } else {
-        // Normal text-only prompt
-        processPrompt(promptText);
-    }
-
-    QGuiApplication::processEvents();
-    promptInput->clear();
+    // Normal text-only prompt
+    processPrompt(promptText);
 }
 
 
@@ -1099,7 +1091,11 @@ void EchoLlama::setupAttachmentButton() {
 
     attachButton = new QToolButton(this);
     attachButton->setFont(fa);
-    attachButton->setText(QChar(0xf030));  // Font Awesome camera icon (or use 0xf0c6 for paperclip)
+
+
+    //attachButton->setText(QChar(0xf030));  // Font Awesome camera icon (or use 0xf0c6 for paperclip)
+    attachButton->setText(QChar(0xf0c6));  // Font Awesome paperclip icon (or use 0xf0c6 for paperclip)
+
     attachButton->setToolTip("Attach an image");
     attachButton->setCursor(Qt::PointingHandCursor);
 
@@ -1124,7 +1120,7 @@ void EchoLlama::promptForImageFile() {
 
 
         // Let the user know an image is attached
-        promptInput->setPlaceholderText("Image attached, add a message...");
+        promptInput->setPlaceholderText("Promt the image...");
 
         // You could also add visual feedback that an image is attached
         attachButton->setStyleSheet("QToolButton { color: #00AEEF; }");

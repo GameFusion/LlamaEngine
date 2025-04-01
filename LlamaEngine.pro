@@ -39,7 +39,7 @@ DEFINES += LlamaEngine_EXPORTS
 INCLUDEPATH += $$PWD/include
 
 SOURCES += LlamaEngine.cpp LlamaRuntime.cpp LlamaRuntimeVision.cpp
-HEADERS += LlamaEngine.h LlamaRuntime.h
+HEADERS += LlamaEngine.h LlamaRuntime.h LlamaRuntimeVision.h
 HEADERS += LlamaSession.h PromptResponse.h
 
 SOURCES += llama_version.cpp

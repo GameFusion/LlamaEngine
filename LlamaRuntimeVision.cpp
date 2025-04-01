@@ -421,3 +421,307 @@ int main_vision(const char *prompt, const char *image) {
     return 0;
 }
 #endif
+
+
+
+
+
+
+///////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////
+/// ///////////////////////////////////////////////////////////////////////
+///
+///
+///
+///
+///
+///
+///
+///
+///
+///
+///
+/// ///////////////////////////////////////////////////////////////////////
+/// ///////////////////////////////////////////////////////////////////////
+/// ///////////////////////////////////////////////////////////////////////
+///
+///
+///
+///
+///
+///
+///
+///
+///
+/// ///////////////////////////////////////////////////////////////////////
+/// ///////////////////////////////////////////////////////////////////////
+/// ///////////////////////////////////////////////////////////////////////
+
+
+
+#include "LlamaRuntimeVision.h"
+
+
+
+
+
+
+// Implementation of the LlamaRuntimeVision class methods
+LlamaRuntimeVision::LlamaRuntimeVision() : params(nullptr), ctx(nullptr), smpl(nullptr), image_end_pos(0), is_initialized(false) {
+    // Initialize ggml timing
+    ggml_time_init();
+
+    // Allocate params
+    params = new common_params();
+    if (params) {
+        // Set some default values
+        params->sampling.temp = 0.2f; // lower temp by default for better quality
+        params->n_ctx = 8192;
+        params->n_batch = 512;
+        params->n_predict = -1; // default to unlimited
+    }
+}
+
+LlamaRuntimeVision::~LlamaRuntimeVision() {
+    // Clean up resources
+    if (smpl) {
+        common_sampler_free(smpl);
+        smpl = nullptr;
+    }
+
+    if (ctx) {
+        delete ctx;
+        ctx = nullptr;
+    }
+
+    if (params) {
+        delete params;
+        params = nullptr;
+    }
+}
+
+bool LlamaRuntimeVision::initialize(const std::string& model_path,
+                                    const std::string& mmproj_path,
+                                    float temperature,
+                                    int context_size) {
+    if (!params) {
+        LOG_ERR("Parameters not initialized\n");
+        return false;
+    }
+
+    // Set up parameters
+    params->model = model_path;
+    params->mmproj = mmproj_path;
+    params->sampling.temp = temperature;
+    params->n_ctx = context_size;
+
+    // Initialize the common framework
+    common_init();
+
+    // Create context
+    try {
+        ctx = new gemma3_context(*params);
+
+        // Initialize sampler
+        smpl = common_sampler_init(ctx->model, params->sampling);
+
+// Set up SIGINT handler
+#if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
+        struct sigaction sigint_action;
+        sigint_action.sa_handler = sigint_handler;
+        sigemptyset (&sigint_action.sa_mask);
+        sigint_action.sa_flags = 0;
+        sigaction(SIGINT, &sigint_action, NULL);
+#elif defined (_WIN32)
+        auto console_ctrl_handler = +[](DWORD ctrl_type) -> BOOL {
+            return (ctrl_type == CTRL_C_EVENT) ? (sigint_handler(SIGINT), true) : false;
+        };
+        SetConsoleCtrlHandler(reinterpret_cast<PHANDLER_ROUTINE>(console_ctrl_handler), true);
+#endif
+
+        // Initialize the context with BOS
+        if (eval_text(*ctx, "<bos>")) {
+            LOG_ERR("Failed to initialize context with BOS\n");
+            return false;
+        }
+
+        is_initialized = true;
+        return true;
+    } catch (const std::exception& e) {
+        LOG_ERR("Exception during initialization: %s\n", e.what());
+        return false;
+    } catch (...) {
+        LOG_ERR("Unknown exception during initialization\n");
+        return false;
+    }
+}
+
+bool LlamaRuntimeVision::hasVision() {
+    return ctx != nullptr && ctx->ctx_clip != nullptr;
+}
+
+bool LlamaRuntimeVision::processImageAndGenerate(const std::string& prompt,
+                                                 const std::string& image_path,
+                                                 void (*callback)(const char*, void* userData),
+                                                 void* userData) {
+    if (!is_initialized || !ctx || !smpl) {
+        LOG_ERR("System not initialized\n");
+        return false;
+    }
+
+    // Store the image path in params
+    params->image.clear();
+    params->image.push_back(image_path);
+    params->prompt = prompt;
+
+    int n_predict = params->n_predict < 0 ? INT_MAX : params->n_predict;
+
+    g_is_generating = true;
+
+    // Start user turn
+    if (eval_text(*ctx, "<start_of_turn>user\n")) {
+        LOG_ERR("Failed to initialize user turn\n");
+        return false;
+    }
+
+    // Process the image
+    for (auto& fname : params->image) {
+        if (eval_image(*ctx, fname)) {
+            LOG_ERR("Failed to process image: %s\n", fname.c_str());
+            return false;
+        }
+    }
+
+    // Store the position after images are processed
+    image_end_pos = ctx->n_past;
+
+    // Process prompt and end user turn, start model turn
+    if (eval_text(*ctx, prompt + "<end_of_turn><start_of_turn>model\n", true)) {
+        LOG_ERR("Failed to process prompt\n");
+        return false;
+    }
+
+    // Generate response
+    if (generate_response(*ctx, smpl, n_predict, callback, userData)) {
+        LOG_ERR("Failed to generate response\n");
+        return false;
+    }
+
+    // End model turn and start new user turn
+    if (eval_text(*ctx, "<end_of_turn><start_of_turn>user\n")) {
+        LOG_ERR("Failed to end model turn\n");
+        return false;
+    }
+
+    g_is_generating = false;
+    return true;
+}
+
+bool LlamaRuntimeVision::generateResponse(const std::string& prompt,
+                                          void (*callback)(const char*, void* userData),
+                                          void* userData) {
+    if (!is_initialized || !ctx || !smpl) {
+        LOG_ERR("System not initialized\n");
+        return false;
+    }
+
+    int n_predict = params->n_predict < 0 ? INT_MAX : params->n_predict;
+
+    if (prompt.empty()) {
+        LOG_ERR("Empty prompt\n");
+        return false;
+    }
+
+    g_is_generating = true;
+
+    // Process prompt and end user turn, start model turn
+    if (eval_text(*ctx, prompt + "<end_of_turn><start_of_turn>model\n", true)) {
+        LOG_ERR("Failed to process prompt\n");
+        return false;
+    }
+
+    // Generate response
+    if (generate_response(*ctx, smpl, n_predict, callback, userData)) {
+        LOG_ERR("Failed to generate response\n");
+        return false;
+    }
+
+    // End model turn and start new user turn
+    if (eval_text(*ctx, "<end_of_turn><start_of_turn>user\n")) {
+        LOG_ERR("Failed to end model turn\n");
+        return false;
+    }
+
+    g_is_generating = false;
+    return true;
+}
+
+bool LlamaRuntimeVision::clearContext(bool keepImages) {
+    if (!ctx) {
+        LOG_ERR("Context not initialized\n");
+        return false;
+    }
+
+    int n_used = llama_get_kv_cache_used_cells(ctx->lctx);
+    int n_max = llama_n_ctx(ctx->lctx);
+
+    // Log the current state
+    LOG("Current KV cache usage: %d / %d tokens\n", n_used, n_max);
+
+    if (keepImages && image_end_pos > 0 && image_end_pos < n_max - 100) {
+        // Option 1: Keep BOS and image, remove everything else
+        llama_kv_cache_clear(ctx->lctx);
+
+        // Reload critical parts
+        ctx->n_past = 0;
+
+        // Reload BOS
+        eval_text(*ctx, "<bos>");
+
+        // Reload user turn
+        eval_text(*ctx, "<start_of_turn>user\n");
+
+        // Reload the initial images
+        for (auto& fname : params->image) {
+            if (eval_image(*ctx, fname)) {
+                LOG("Warning: Failed to reload image\n");
+            }
+        }
+
+        LOG("Context reset: BOS and images reloaded (%d tokens)\n", ctx->n_past);
+    } else {
+        // Option 2: Complete reset if context is nearly full or image retention not requested
+        llama_kv_cache_clear(ctx->lctx);
+        ctx->n_past = 0;
+
+        // Restart with just BOS
+        eval_text(*ctx, "<bos>");
+        eval_text(*ctx, "<start_of_turn>user\n");
+
+        LOG("Full context reset (context was too full or image retention not requested)\n");
+    }
+
+    return true;
+}
+
+std::string LlamaRuntimeVision::getContextInfo() {
+    if (!ctx) {
+        return "Context not initialized";
+    }
+
+    int n_used = llama_get_kv_cache_used_cells(ctx->lctx);
+    int n_max = llama_n_ctx(ctx->lctx);
+
+    char buffer[256];
+    snprintf(buffer, sizeof(buffer),
+             "Current KV cache usage: %d / %d tokens\n"
+             "Image end position: %d\n"
+             "Model: %s\n"
+             "CLIP model: %s\n",
+             n_used, n_max, image_end_pos,
+             params->model.c_str(), params->mmproj.c_str());
+
+    return std::string(buffer);
+}
+
+

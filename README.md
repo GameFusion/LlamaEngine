@@ -8,6 +8,24 @@ This project is a module spin-off from [**StarGit**](https://stargit.com), now a
 
 ---
 
+## **In Feature Development: Multimodal Support with Gemma 3**
+
+The `feature/gemma3-multimodal` branch is introducing new experimental capabilities:
+
+- **Image analysis & visual understanding** with Gemma 3 models
+- **Drag & drop support** for image uploads
+- **Threading optimizations** for responsive UI during processing
+
+![Preview: EchoLlama with Multimodal Support](docs/images/Screenshot%202025-04-01%20at%2022.20.06.png)
+![Preview: EchoLlama with Multimodal Support](docs/images/Screenshot%202025-04-01%20at%2021.48.54.png)
+
+You can explore this experimental feature by checking out:
+```bash
+git checkout feature/gemma3-multimodal
+
+
+---
+
 ## **EchoLlama Client**
 
 **EchoLlama*, the demo client for LlamaEngine, running on Windows:

@@ -367,15 +367,6 @@ bool LlamaRuntime::generateResponse(int session_id, const std::string &input_pro
     // add the response to the messages, this is the history context used to provide llm with context in future prompts
     session->messages.push_back({"assistant", strdup(session->response.c_str())});
 
-    /*
-    int prev_len = llama_chat_apply_template(llama_model_chat_template(model, nullptr), messages.data(), messages.size(), false, nullptr, 0);
-    if (prev_len < 0) {
-        error_ = "Error: failed to apply the chat template";
-        logError(error_);
-        return false;
-    }
-    */
-
     return true;
 }
 
@@ -543,8 +534,8 @@ bool LlamaRuntime::generate(LlamaSession *session, const std::string &prompt, vo
         llama_batch_free(batch);
 
         // Safety check to prevent infinite loops
-        if (token_count > 4096) {
-            logWarning("Generation exceeded maximum token count, stopping.");
+        if (token_count > n_ctx_total) {
+            logWarning("Generated tokens "+std::to_string(token_count)+" exceeded maximum token count "+ std::to_string(n_ctx_total)+", stopping.");
             break;
         }
     }

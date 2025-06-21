@@ -1,7 +1,5 @@
 TEMPLATE = lib
 
-
-
 # Backend Selection (CPU, CUDA, Vulkan, etc.)
 isEmpty(BACKEND){
     BACKEND = CUDA # Change this to CUDA or Vulkan when needed

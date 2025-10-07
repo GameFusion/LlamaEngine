@@ -90,6 +90,13 @@ public:
     bool  clearSession(int sessionId);
     bool deleteSession(int sessionId);
 
+    int getLatestTokenCount() const;
+    double getLatestCost() const;
+    std::string getVendor() const;
+    bool isLocal() const;
+    std::string getApiTech() const;
+    double getProcessingTime() const; // In seconds
+
     /**
      * @brief Generates a response based on a given prompt.Using default session
      * @param prompt The input text to process.
@@ -196,6 +203,14 @@ private:
     bool clipModelLoaded = false;
     std::string modelPathFile; // Path file name for current model
     std::string clipModelPathFile;
+
+    // --- processing stats
+    int latestTokenCount;
+    double latestCost;
+    std::string vendor; // e.g., "Llama"
+    bool local; // true for local, false for remote
+    std::string apiTech; // e.g., "LlamaEngine"
+    std::chrono::duration<double> processingTime; // Last response time
 };
 
 #endif // LlamaClient_h

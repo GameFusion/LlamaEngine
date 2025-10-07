@@ -69,7 +69,8 @@ bool SetemLoadLibrary(const std::string& relativePath, LlamaClient** clientPtr, 
  * @param dllPath The path to the dynamic library (DLL/shared object).
  * @throws std::runtime_error if the library fails to load or required functions are not found.
  */
-LlamaClient::LlamaClient(const std::string &backendType, const std::string& dllPath) {
+LlamaClient::LlamaClient(const std::string &backendType, const std::string& dllPath)
+    : latestTokenCount(0), latestCost(0.0), vendor("Llama"), local(true), apiTech("LlamaEngine"), processingTime(0.0) {
     backend = backendType;
     library = dllPath;
     modelLoaded = false;
@@ -289,7 +290,23 @@ bool LlamaClient::generateResponse(const std::string& prompt,
                                    void *userData)
 {
     const int sessionId = 0;
-    return generateResponseFunc(sessionId, prompt.c_str(), streamCallback, finishedCallback, userData);
+    auto startTime = std::chrono::steady_clock::now();
+
+    // Compute token count and cost
+    latestTokenCount = prompt.length() / 4; // Rough estimate: ~4 chars per token
+    latestCost = local ? 0.0 : latestTokenCount * 0.0001; // Example: $0.0001 per token for remote
+
+    // Call underlying LLM engine
+    bool ret = generateResponseFunc(sessionId, prompt.c_str(), streamCallback, finishedCallback, userData);
+
+    auto endTime = std::chrono::steady_clock::now();
+    processingTime = std::chrono::duration_cast<std::chrono::duration<double>>(endTime - startTime);
+
+    /*
+    GameFusion::Log::info() << "Generated response: tokens=" << latestTokenCount << ", cost=" << latestCost
+                << ", time=" << processingTime.count() << "s";
+    */
+    return ret;
 }
 
 bool LlamaClient::generateResponse(const std::string& prompt,
@@ -299,7 +316,23 @@ bool LlamaClient::generateResponse(const std::string& prompt,
                                    void *userData)
 {
     const int sessionId = 0;
-    return generateResponseWithImageFileFunc(sessionId, prompt.c_str(), imagePath.c_str(), streamCallback, finishedCallback, userData);
+
+    auto startTime = std::chrono::steady_clock::now();
+
+    // Compute token count and cost
+    latestTokenCount = prompt.length() / 4; // Rough estimate: ~4 chars per token
+    latestCost = local ? 0.0 : latestTokenCount * 0.0001; // Example: $0.0001 per token for remote
+
+    bool ret = generateResponseWithImageFileFunc(sessionId, prompt.c_str(), imagePath.c_str(), streamCallback, finishedCallback, userData);
+
+    auto endTime = std::chrono::steady_clock::now();
+    processingTime = std::chrono::duration_cast<std::chrono::duration<double>>(endTime - startTime);
+
+    /*
+    GameFusion::Log::info() << "Generated response: tokens=" << latestTokenCount << ", cost=" << latestCost
+                << ", time=" << processingTime.count() << "s";
+    */
+    return ret;
 }
 
 /**
@@ -430,4 +463,28 @@ bool LlamaClient::clearSession(int sessionId) {
 
 bool LlamaClient::deleteSession(int sessionId) {
     return deleteSessionFunc(sessionId);
+}
+
+int LlamaClient::getLatestTokenCount() const {
+    return latestTokenCount;
+}
+
+double LlamaClient::getLatestCost() const {
+    return latestCost;
+}
+
+std::string  LlamaClient::getVendor() const {
+    return vendor;
+}
+
+bool LlamaClient::isLocal() const {
+    return local;
+}
+
+std::string  LlamaClient::getApiTech() const {
+    return apiTech;
+}
+
+double LlamaClient::getProcessingTime() const {
+    return processingTime.count();
 }

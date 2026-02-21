@@ -13,6 +13,7 @@
 #include <vector>
 #include <string>
 #include <functional>
+#include <chrono>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -38,6 +39,8 @@ public:
     LlamaClient(const std::string &backend = "CUDA", const std::string& dllPath = "LlamaEngine.dll");
 #elif __APPLE__
     LlamaClient(const std::string &backend = "CPU", const std::string& dllPath = "LlamaEngine.dylib");
+#elif __linux__
+    LlamaClient(const std::string &backend = "CPU", const std::string& dllPath = "libllama_engine.so");
 #endif
 
     /**

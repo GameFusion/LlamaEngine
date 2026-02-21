@@ -11,6 +11,10 @@ enum GGUFType {
     TYPE_STRING
 };
 
+#ifdef __linux__
+#include <cstdint>
+#endif
+
 // GGUF Metadata Entry
 struct GGUFMetadataEntry {
     GGUFType type;

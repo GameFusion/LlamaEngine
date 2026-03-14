@@ -7,6 +7,15 @@
 #include <dwmapi.h> // For DwmSetWindowAttribute
 #pragma comment(lib, "Dwmapi.lib")
 
+// Older Windows SDKs may not define these newer DWM attributes yet.
+#ifndef DWMWA_CAPTION_COLOR
+#define DWMWA_CAPTION_COLOR 35
+#endif
+
+#ifndef DWMWA_TEXT_COLOR
+#define DWMWA_TEXT_COLOR 36
+#endif
+
 void setWindowsTitleBarColor(HWND hwnd, COLORREF color) {
     // Set the title bar color
     DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, &color, sizeof(color));
@@ -36,4 +45,3 @@ int main(int argc, char *argv[])
 
     return app.exec();
 }
-

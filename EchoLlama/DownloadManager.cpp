@@ -20,20 +20,23 @@ void DownloadManager::downloadFile(const QString& url, QFile* file)
     }
 
     NetworkUtils* networkUtils = new NetworkUtils(this);
+    file->setParent(networkUtils);
     activeDownloads[url] = networkUtils;
 
     connect(networkUtils, &NetworkUtils::progressUpdated, this, [this, url, networkUtils](qint64 bytesReceived, qint64 totalBytes) {
         emit progressUpdated(url, networkUtils->startOffset(), bytesReceived, totalBytes);
         });
 
-    connect(networkUtils, &NetworkUtils::downloadFinished, this, [this, url]() {
+    connect(networkUtils, &NetworkUtils::downloadFinished, this, [this, url, networkUtils]() {
         activeDownloads.remove(url);
         emit downloadFinished(url);
+        networkUtils->deleteLater();
         });
 
-    connect(networkUtils, &NetworkUtils::downloadError, this, [this, url](const QString& error) {
+    connect(networkUtils, &NetworkUtils::downloadError, this, [this, url, networkUtils](const QString& error) {
         activeDownloads.remove(url);
         emit downloadError(url, error);
+        networkUtils->deleteLater();
         });
 
     networkUtils->downloadFile(url, file);
@@ -60,10 +63,10 @@ void DownloadManager::cancelDownload(const QString& url)
 {
     if (activeDownloads.contains(url)) {
         NetworkUtils *networkUtils = activeDownloads[url];
+        activeDownloads.remove(url);
         networkUtils->cancelDownload();
-        delete networkUtils;
+        networkUtils->deleteLater();
 
         emit downloadCancelled(url);
     }
 }
-

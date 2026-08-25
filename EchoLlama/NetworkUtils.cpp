@@ -34,6 +34,7 @@ void NetworkUtils::downloadFile(const QString &url, QFile *file)
     currentReply = networkManager->get(request);
 
     connect(currentReply, &QNetworkReply::readyRead, this, &NetworkUtils::handleReadyRead);
+    connect(currentReply, &QNetworkReply::finished, this, &NetworkUtils::handleFinished);
     connect(currentReply, QOverload<QNetworkReply::NetworkError>::of(&QNetworkReply::errorOccurred),
             this, &NetworkUtils::handleError);
     connect(currentReply, &QNetworkReply::downloadProgress,
@@ -47,8 +48,26 @@ qint64 NetworkUtils::startOffset()
 
 void NetworkUtils::handleReadyRead()
 {
-    if (currentFile) {
+    if (currentFile && currentReply) {
         currentFile->write(currentReply->readAll());
+    }
+}
+
+void NetworkUtils::handleFinished()
+{
+    if (!currentReply)
+        return;
+
+    if (currentReply->error() == QNetworkReply::NoError) {
+        if (currentFile) {
+            currentFile->write(currentReply->readAll());
+            currentFile->close();
+            currentFile = nullptr;
+        }
+
+        currentReply->deleteLater();
+        currentReply = nullptr;
+        emit downloadFinished();
     }
 }
 
@@ -113,9 +132,8 @@ QString errorString(QNetworkReply::NetworkError code)
 void NetworkUtils::handleError(QNetworkReply::NetworkError code)
 {
     QString errorMessage = errorString(code);
-    emit downloadError(errorMessage);
     qWarning() << "Download error:" << code;
-    /*
+
     if (currentReply) {
         currentReply->deleteLater();
         currentReply = nullptr;
@@ -125,20 +143,13 @@ void NetworkUtils::handleError(QNetworkReply::NetworkError code)
         currentFile->close();
         currentFile = nullptr;
     }
-    */
+
+    emit downloadError(errorMessage);
 }
 
 void NetworkUtils::handleDownloadProgress(qint64 bytesReceived, qint64 totalBytes)
 {
     emit progressUpdated(bytesReceived, totalBytes);
-    if ((bytesReceived) == totalBytes && currentReply) {
-        currentReply->deleteLater();
-        currentReply = nullptr;
-        currentFile->close();
-        currentFile = nullptr;
-        emit downloadFinished();
-    }
-
 }
 
 void NetworkUtils::cancelDownload()

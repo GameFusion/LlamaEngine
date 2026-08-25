@@ -32,6 +32,7 @@ public slots:
 
 private slots:
     void handleReadyRead();
+    void handleFinished();
     void handleError(QNetworkReply::NetworkError code);
     void handleDownloadProgress(qint64 bytesReceived, qint64 totalBytes);
     

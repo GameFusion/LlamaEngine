@@ -27,12 +27,58 @@
 #include <QHBoxLayout>
 #include <QThread>
 #include <QMimeData>
+#include <QFileInfo>
+#include <QRegularExpression>
+#include <QTextDocumentFragment>
 
 #include "llama_version.h"
 
 #include "ResponseWorker.h"
 
-bool systemPrompt=false;
+static QString findBackendLibrary(const QStringList& resourceBasePaths,
+                                  const QStringList& directLibraryPaths,
+                                  const QString& version,
+                                  const QString& backend,
+                                  const QString& libraryFileName) {
+    for (const QString& directLibraryPath : directLibraryPaths) {
+        const QString cleanPath = QDir::cleanPath(directLibraryPath);
+        if (QFileInfo::exists(cleanPath))
+            return cleanPath;
+    }
+
+    QStringList backendNames;
+    backendNames << backend;
+    if (!backend.isEmpty()) {
+        QString titleCaseBackend = backend;
+        titleCaseBackend[0] = titleCaseBackend[0].toUpper();
+        if (!backendNames.contains(titleCaseBackend))
+            backendNames << titleCaseBackend;
+    }
+
+    for (const QString& resourceBasePath : resourceBasePaths) {
+        for (const QString& backendName : backendNames) {
+            const QString exactPath = QDir::cleanPath(QString("%1/%2/%3/%4")
+                                                          .arg(resourceBasePath, version, backendName, libraryFileName));
+            if (QFileInfo::exists(exactPath))
+                return exactPath;
+        }
+    }
+
+    for (const QString& resourceBasePath : resourceBasePaths) {
+        QDir baseDir(resourceBasePath);
+        const QFileInfoList versionDirs = baseDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+        for (const QFileInfo& versionDir : versionDirs) {
+            for (const QString& backendName : backendNames) {
+                const QString fallbackPath = QDir::cleanPath(QString("%1/%2/%3")
+                                                                 .arg(versionDir.absoluteFilePath(), backendName, libraryFileName));
+                if (QFileInfo::exists(fallbackPath))
+                    return fallbackPath;
+            }
+        }
+    }
+
+    return QString();
+}
 
 EchoLlama::EchoLlama(QWidget *parent)
     : QWidget(parent), chatDisplay(new QTextEdit(this)), promptInput(new QPlainTextEdit(this)), sendButton(new QToolButton(this)){
@@ -65,6 +111,14 @@ EchoLlama::EchoLlama(QWidget *parent)
     // Setup Animation Processing Timer
     animationTimer = new QTimer(this);
     connect(animationTimer, &QTimer::timeout, this, &EchoLlama::updateProcessingAnimation);
+
+    markdownRenderTimer = new QTimer(this);
+    markdownRenderTimer->setSingleShot(true);
+    markdownRenderTimer->setInterval(75);
+    connect(markdownRenderTimer, &QTimer::timeout, this, [this]() {
+        if (responseStartPosition >= 0 && !currentResponseMarkdown.isEmpty())
+            renderMarkdownResponse(currentResponseMarkdown);
+    });
 
     // Connect signals to UI update slots
     connect(this, &EchoLlama::responseReceived, this, &EchoLlama::responseCallback, Qt::QueuedConnection);
@@ -289,6 +343,11 @@ void EchoLlama::setupConnections() {
 
     connect(downloadManager, &DownloadManager::progressUpdated, this, &EchoLlama::updateDownloadProgress);
     connect(downloadManager, &DownloadManager::downloadFinished, this, &EchoLlama::onDownloadFinished);
+    connect(downloadManager, &DownloadManager::downloadError, this, [this](const QString& url, const QString& error) {
+        Q_UNUSED(url);
+        chatDisplay->append("Download failed: " + error);
+        progressBar->hide();
+    });
 
     connect(modelSelectionComboBox, &QComboBox::currentIndexChanged, this, &EchoLlama::handleModelSelectionChange);
 }
@@ -299,17 +358,19 @@ void EchoLlama::initializeLlama() {
 
     qDebug() << "initializeLlama";
 
-    // Define base relative path
-    const QString relativePath = "Resources/llama.cpp";
-
-    // Determine resource base path based on OS
-    QString resourceBasePath;
+    // Determine resource base paths based on OS. Qt Creator debug builds do not always
+    // copy app resources, so keep the source tree as a fallback for local runs.
+    QStringList resourceBasePaths;
+    QStringList directLibraryPaths;
 #ifdef __APPLE__
-    resourceBasePath = QCoreApplication::applicationDirPath() + "/../" + relativePath;
+    directLibraryPaths << QDir::cleanPath(QCoreApplication::applicationDirPath() + "/../../../../../../build/Qt_6_10_2_for_macOS-Debug/bin/Metal/libLlamaEngine.1.dylib");
+    directLibraryPaths << QDir::cleanPath(QCoreApplication::applicationDirPath() + "/../../../../../../build/Qt_6_10_2_for_macOS-Debug/bin/Metal/libLlamaEngine.1.0.0.dylib");
+    resourceBasePaths << QDir::cleanPath(QCoreApplication::applicationDirPath() + "/../Resources/llama.cpp");
+    resourceBasePaths << QDir::cleanPath(QCoreApplication::applicationDirPath() + "/../../../../../Resources/llama.cpp");
 #elif __linux__
-    resourceBasePath = QCoreApplication::applicationDirPath() + "/../../" + relativePath;
+    resourceBasePaths << QDir::cleanPath(QCoreApplication::applicationDirPath() + "/../../Resources/llama.cpp");
 #else
-    resourceBasePath = QCoreApplication::applicationDirPath() + "/" + relativePath;
+    resourceBasePaths << QDir::cleanPath(QCoreApplication::applicationDirPath() + "/Resources/llama.cpp");
 #endif
 
 // Define library file names
@@ -327,11 +388,22 @@ void EchoLlama::initializeLlama() {
 
     // Construct full resource path
     const QString backendType = architectureComboBox->currentText().toLower();
-    const QString localResourcePath = QString("%1/%2/%3/%4")
-                                          .arg(resourceBasePath, LLAMA_COMMIT_VERSION, backendType, libraryFileName);
+    const QString localResourcePath = findBackendLibrary(resourceBasePaths,
+                                                         directLibraryPaths,
+                                                         LLAMA_COMMIT_VERSION,
+                                                         backendType,
+                                                         libraryFileName);
 
     qDebug() << "localResourcePath:" << localResourcePath;
+    qDebug() << "directLibraryPaths:" << directLibraryPaths;
+    qDebug() << "resourceBasePaths:" << resourceBasePaths;
     qDebug() << "Binary path:" << QCoreApplication::applicationFilePath();
+
+    if (localResourcePath.isEmpty()) {
+        chatDisplay->append("Failed to locate LlamaEngine runtime library.");
+        chatDisplay->append("Binary path: " + QCoreApplication::applicationFilePath() + "\n");
+        return;
+    }
 
     // Create the Llama client
     const QString arch = architectureComboBox->currentText();
@@ -527,7 +599,7 @@ bool EchoLlama::loadLlama() {
         qint64 bytesTotal = modelObject["byte_length"].toInteger();
         qint64 fileSize = file->size();
 
-        if(fileSize != bytesTotal){
+        if(fileSize < bytesTotal){
             // download incomplete
             // here we display a message in the chat only
             // if a model is not already loaded
@@ -579,22 +651,17 @@ bool EchoLlama::loadLlama() {
         if(!mmproj.isEmpty())
         {
             QString clipModelPathFile = QString("%1/%2").arg(modelPath).arg(mmproj);
-            QTextEdit *chatDisplayPtr = (QTextEdit*)chatDisplay;  // Assuming chatDisplay is defined elsewhere
-                llamaClient->loadClipModel(clipModelPathFile.toUtf8().constData(), [](const char* message, void *userData){
-                    QTextEdit *display = (QTextEdit*)userData;
-                    display->append("Loading clip model: "+QString(message));
-                }, (void*)chatDisplay);
+            const bool clipLoaded = llamaClient->loadClipModel(
+                clipModelPathFile.toUtf8().constData(),
+                [](const char* message, void*) {
+                    qDebug() << "Loading CLIP model:" << (message ? message : "");
+                },
+                nullptr);
+            if (!clipLoaded) {
+                chatDisplay->append("Failed to load vision projector: \n" + clipModelPathFile + "\n");
+                return false;
+            }
         }
-
-        //displayMiniatureInChat(chatDisplay,  "/Users/andreascarlen/Documents/Screenshot 2024-03-22 at 12.09.51.png");
-        //QGuiApplication::processEvents();
-        //generateResponse("Hello, please describe this image!", "/Users/andreascarlen/Documents/Screenshot 2024-03-22 at 12.09.51.png");
-        generateResponse("Hello");
-    }
-    else{
-
-        systemPrompt = true;
-        generateResponse("Hello!");
     }
     promptInput->setFocus();
 
@@ -602,6 +669,14 @@ bool EchoLlama::loadLlama() {
 }
 
 void EchoLlama::processPrompt(const QString& prompt) {
+    if (!llamaClient) {
+        initializeLlama();
+        if (!llamaClient) {
+            chatDisplay->append("Unable to generate response, Llama client not loaded.");
+            return;
+        }
+    }
+
     //chatDisplay->append("Prompt: " + prompt + "\n");
     QTextCursor cursor = chatDisplay->textCursor();
     cursor.movePosition(QTextCursor::End);
@@ -630,6 +705,10 @@ void EchoLlama::processPrompt(const QString& prompt) {
     cursor.insertBlock(); // insert new block for the response
 
     cursor.movePosition(QTextCursor::End);
+    currentResponseMarkdown.clear();
+    responseStartPosition = cursor.position();
+    if (markdownRenderTimer->isActive())
+        markdownRenderTimer->stop();
     chatDisplay->ensureCursorVisible();
 
     QGuiApplication::processEvents();
@@ -643,21 +722,21 @@ void EchoLlama::processPrompt(const QString& prompt) {
     worker->moveToThread(thread);
 
     // Connect signals and slots
-    connect(thread, &QThread::started, [=]() {
-        if (!attachedImagePath.isEmpty()) {
-            worker->processWithImage(prompt, attachedImagePath);
+    const QString imagePath = attachedImagePath;
+    connect(thread, &QThread::started, worker, [worker, prompt, imagePath]() {
+        if (!imagePath.isEmpty()) {
+            worker->processWithImage(prompt, imagePath);
         } else {
             worker->processWithoutImage(prompt);
         }
     });
 
-    connect(worker, &ResponseWorker::finished, [=]() {
+    connect(worker, &ResponseWorker::finished, this, [this]() {
         stopProcessingAnimation();
-        thread->quit();
-        thread->wait();
-        worker->deleteLater();
-        thread->deleteLater();
-    });
+    }, Qt::QueuedConnection);
+    connect(worker, &ResponseWorker::finished, thread, &QThread::quit);
+    connect(worker, &ResponseWorker::finished, worker, &QObject::deleteLater);
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
 
     // Start the thread
     thread->start();
@@ -695,17 +774,64 @@ void EchoLlama::updateProcessingAnimation() {
 }
 
 void EchoLlama::responseCallback(const QString& msg) {
+    const QString cleanedChunk = sanitizeModelChunk(msg);
+    if (cleanedChunk.isEmpty())
+        return;
+
+    currentResponseMarkdown += cleanedChunk;
+    scheduleMarkdownRender();
+}
+
+QString EchoLlama::sanitizeModelChunk(const QString& text) const {
+    QString cleaned = text;
+    cleaned.replace("<|im_end|>", "");
+    cleaned.replace("<|end_of_text|>", "");
+    cleaned.replace("<|eot_id|>", "");
+
+    static const QRegularExpression clipLogLine(
+        R"(^\s*Loading\s+(?:clip|CLIP)\s+model:.*(?:\r?\n|$))",
+        QRegularExpression::MultilineOption);
+    cleaned.remove(clipLogLine);
+
+    return cleaned;
+}
+
+QString EchoLlama::sanitizeModelOutput(const QString& text) const {
+    QString cleaned = sanitizeModelChunk(text);
+    return cleaned.trimmed();
+}
+
+void EchoLlama::scheduleMarkdownRender() {
+    if (responseStartPosition < 0)
+        return;
+
+    if (!markdownRenderTimer->isActive())
+        markdownRenderTimer->start();
+}
+
+void EchoLlama::renderMarkdownResponse(const QString& markdown, bool finalRender) {
+    const QString cleanedMarkdown = finalRender ? sanitizeModelOutput(markdown) : sanitizeModelChunk(markdown);
+    if (cleanedMarkdown.isEmpty())
+        return;
+
     // Save current scrollbar position and check if it was at the bottom
     QScrollBar* scrollBar = chatDisplay->verticalScrollBar();
     bool wasAtBottom = scrollBar->value() == scrollBar->maximum();
 
-    QTextCursor cursor = chatDisplay->textCursor();
-    cursor.movePosition(QTextCursor::End);
+    QTextCursor cursor(chatDisplay->document());
+    if (responseStartPosition >= 0 && responseStartPosition < chatDisplay->document()->characterCount()) {
+        cursor.setPosition(responseStartPosition);
+        cursor.movePosition(QTextCursor::End, QTextCursor::KeepAnchor);
+        cursor.removeSelectedText();
+    } else {
+        cursor.movePosition(QTextCursor::End);
+    }
 
     // Create a QTextBlockFormat for the block formatting options
     QTextBlockFormat blockFormat;
     blockFormat.setLeftMargin(0); // Set the left margin to 20 pixels
-    blockFormat.setLineHeight(25, QTextBlockFormat::FixedHeight); // Set line spacing to 25 pixels
+    blockFormat.setTopMargin(8);
+    blockFormat.setBottomMargin(8);
     // Apply the block format to the current block
     cursor.setBlockFormat(blockFormat);
 
@@ -713,13 +839,14 @@ void EchoLlama::responseCallback(const QString& msg) {
     format.setForeground(Qt::white); // #c8a2c8 in RGB
     cursor.setBlockCharFormat(format);
 
-    cursor.insertText(msg);
+    cursor.insertFragment(QTextDocumentFragment::fromMarkdown(cleanedMarkdown));
 
     // Set the modified cursor back to the text edit
     chatDisplay->setTextCursor(cursor);
 
     // Ensure the scroll bar is updated to the bottom
     cursor.movePosition(QTextCursor::End);
+    chatDisplay->setTextCursor(cursor);
     chatDisplay->ensureCursorVisible();
 
     // Only auto-scroll if we were already at the bottom before adding text
@@ -794,17 +921,13 @@ void EchoLlama::generateResponse(const QString& prompt, const QString &imagePath
 
 
 void EchoLlama::finishedCallback(const QString& msg) {
-    // Optional: Handle any cleanup after response is finished
-    if(systemPrompt){
-        // system promps are generated directly without a user question directly by calling generateResponse vs processPromt
-        // we need to add a new line
-        QTextCursor cursor = chatDisplay->textCursor();
-        cursor.movePosition(QTextCursor::End);
-        cursor.insertBlock(); // insert new block for the prompt
+    if (markdownRenderTimer->isActive())
+        markdownRenderTimer->stop();
 
-        // pop system prompt status
-        systemPrompt = false;
-    }
+    const QString response = currentResponseMarkdown.trimmed().isEmpty() ? msg : currentResponseMarkdown;
+    renderMarkdownResponse(response, true);
+    currentResponseMarkdown.clear();
+    responseStartPosition = -1;
 }
 
 void EchoLlama::handleTextChange() {
@@ -949,6 +1072,24 @@ void EchoLlama::applyStyles() {
             "   font-size: 16px;" // Increased font size
             "}"
         );
+    chatDisplay->document()->setDefaultStyleSheet(R"(
+        body, p, li, h1, h2, h3, h4, h5, h6 {
+            color: #ffffff;
+            font-size: 16px;
+        }
+        p {
+            margin-top: 0.35em;
+            margin-bottom: 0.65em;
+        }
+        ul, ol {
+            margin-top: 0.35em;
+            margin-bottom: 0.8em;
+            margin-left: 1.2em;
+        }
+        strong {
+            font-weight: 700;
+        }
+    )");
 
     inputGroup->setStyleSheet(
             "QWidget {"
@@ -1101,6 +1242,11 @@ void EchoLlama::downloadModel() {
     }
 
     QString downloadLink = modelObject["download_link"].toString();
+    if (downloadManager && downloadManager->isActive(downloadLink)) {
+        qDebug() << "Download already active:" << downloadLink;
+        return;
+    }
+
     QString downloadFile = QUrl(downloadLink).fileName();
     QString modelPath = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.cache/EchoLlama/models";
 
@@ -1110,8 +1256,19 @@ void EchoLlama::downloadModel() {
     QString downloadFilePath = QString("%1/%2").arg(modelPath).arg(downloadFile);
     QFile *file = new QFile(downloadFilePath, this);
 
+    const qint64 expectedBytes = modelObject.value("byte_length").toVariant().toLongLong();
+    if (expectedBytes > 0 && file->exists() && file->size() >= expectedBytes) {
+        qDebug() << "Model already downloaded:" << downloadFilePath;
+        progressBar->hide();
+        file->deleteLater();
+        if (llamaClient && !llamaClient->isModelLoaded())
+            loadLlama();
+        return;
+    }
+
     if (!file->open(QIODevice::Append)) {
         qWarning() << "Failed to open file for writing";
+        file->deleteLater();
         return;
     }
 
@@ -1125,6 +1282,9 @@ void EchoLlama::showSettings() {
 }
 
 void EchoLlama::updateProgress(qint64 starOffset, qint64 bytesReceived, qint64 totalBytes){
+    if (totalBytes + starOffset <= 0)
+        return;
+
     // Calculate the percentage received
     int percentReceived = static_cast<int>((bytesReceived+starOffset) * 100 / (totalBytes+starOffset));
     progressBar->setValue(percentReceived);
@@ -1149,6 +1309,11 @@ void EchoLlama::updateDownloadProgress(const QString &url, qint64 starOffset, qi
 void EchoLlama::onDownloadFinished(const QString &url)
 {
     qDebug() << "Download complete";
+
+    if (!llamaClient) {
+        initializeLlama();
+        return;
+    }
 
     if (!llamaClient->isModelLoaded()) {
         //chatDisplay->append("Model download complete, loading llama...\n");

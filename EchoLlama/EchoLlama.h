@@ -176,6 +176,10 @@ private:
     QJsonObject getSelectedModelObject();
 
     void updateProgress(qint64 starOffset, qint64 bytesReceived, qint64 totalBytes);
+    QString sanitizeModelChunk(const QString& text) const;
+    QString sanitizeModelOutput(const QString& text) const;
+    void scheduleMarkdownRender();
+    void renderMarkdownResponse(const QString& markdown, bool finalRender = false);
 
     /// processing animation
     void startProcessingAnimation();
@@ -183,9 +187,12 @@ private:
     void updateProcessingAnimation();
 
     QTimer* animationTimer;
+    QTimer* markdownRenderTimer;
     int animationFrame = 0;
     const int TOTAL_FRAMES = 8;
     bool isAnimating = false;
+    QString currentResponseMarkdown;
+    int responseStartPosition = -1;
 
 
 };
